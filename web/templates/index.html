@@ -1275,7 +1275,8 @@ const CAT_ICONS = {
   '反绕过': '&#x1F6E1;&#xFE0F;', '一致性': '&#x1F517;', '缓存检测': '&#x1F4BE;',
   'Web搜索': '&#x1F310;', '压缩检测': '&#x1F4E6;', '延迟分析': '&#x23F1;&#xFE0F;',
   '错误分析': '&#x274C;', '流式检测': '&#x1F4E1;', '多轮配对': '&#x1F504;',
-  '行为分析': '&#x1F3AD;', '偷鸡检测': '&#x1F412;', '其他': '&#x1F4CB;'
+  '行为分析': '&#x1F3AD;', '偷鸡检测': '&#x1F412;', '模型身份': '&#x1F464;',
+  '模型一致性': '&#x1F50D;', '其他': '&#x1F4CB;'
 };
 
 function categorizeEvidence(evidence) {
@@ -1286,6 +1287,8 @@ function categorizeEvidence(evidence) {
     else if (/service_tier|inference_geo|cache_creation|usage:/.test(e)) push('服务字段', e);
     else if (/headers|request-id|org.*id|ratelimit|rate-limit/i.test(e)) push('Headers', e);
     else if (/金丝雀|系统提示|错误结构|边界/.test(e)) push('反绕过', e);
+    else if (/\[模型身份\]/.test(e)) push('模型身份', e);
+    else if (/\[模型一致性\]/.test(e)) push('模型一致性', e);
     else if (/一致性/.test(e)) push('一致性', e);
     else if (/缓存/.test(e)) push('缓存检测', e);
     else if (/偷鸡|模型替换|模型验证/i.test(e)) push('偷鸡检测', e);

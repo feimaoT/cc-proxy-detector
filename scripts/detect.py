@@ -313,6 +313,7 @@ class Fingerprint:
     web_search_result_count: int = 0        # 搜索结果数量
     web_search_has_real_urls: bool = False   # 是否包含真实 URL
     web_search_mcp_detected: bool = False   # 是否检测到 MCP 痕迹
+    web_search_text_response: str = ""      # 搜索结果摘要文本 (用于证据展示)
     # 自动压缩检测
     compression_detected: bool = False
     compression_token_ratio: float = 0.0    # 实际/预期 input_tokens 比
@@ -1375,9 +1376,23 @@ def probe_error_structure(base_url: str, api_key: str, model: str,
             fp.error_type_string = err_body.get("__type", "") or err_body.get("Type", "")
 
         # Google Vertex 错误结构: {"error":{"code":N,"status":"...",...}}
+        # 注意: OneAPI/NewAPI 也用类似结构，需要通过 status 字段区分
         elif isinstance(err_body.get("error"), dict) and "code" in err_body.get("error", {}):
-            fp.error_structure = "vertex"
-            fp.error_type_string = err_body["error"].get("status", "")
+            vertex_status = err_body["error"].get("status", "")
+            # 真正的 Vertex 会有 INVALID_ARGUMENT, NOT_FOUND, RESOURCE_EXHAUSTED 等状态
+            real_vertex_statuses = {
+                "invalid_argument", "not_found", "resource_exhausted",
+                "permission_denied", "unauthenticated", "internal",
+                "unavailable", "deadline_exceeded",
+            }
+            if vertex_status.lower().replace(" ", "_") in real_vertex_statuses:
+                fp.error_structure = "vertex"
+            elif vertex_status:
+                fp.error_structure = "vertex"
+            else:
+                # status 为空 → 可能是 OneAPI/NewAPI 自己的错误格式，标记为可疑
+                fp.error_structure = "vertex_uncertain"
+            fp.error_type_string = vertex_status
 
         # 检测后端关键词泄露
         backend_leak_keywords = {
@@ -1861,6 +1876,136 @@ def probe_cache(base_url: str, api_key: str, model: str,
 
 # ── Web Search 检测探测 ────────────────────────────────────
 
+# 模型知识截止时间定义 (用于验证模型身份)
+MODEL_KNOWLEDGE_CUTOFF = {
+    "claude-opus-4-6":            {"cutoff": "2025-03", "family": "Claude 4.6"},
+    "claude-sonnet-4-6":          {"cutoff": "2025-03", "family": "Claude 4.6"},
+    "claude-opus-4-5-20251101":   {"cutoff": "2025-04", "family": "Claude 4.5"},
+    "claude-opus-4-1-20250805":   {"cutoff": "2025-03", "family": "Claude 4"},
+    "claude-opus-4-20250514":     {"cutoff": "2025-02", "family": "Claude 4"},
+    "claude-sonnet-4-5-20250929": {"cutoff": "2025-04", "family": "Claude 4.5"},
+    "claude-sonnet-4-20250514":   {"cutoff": "2025-02", "family": "Claude 4"},
+    "claude-haiku-4-5-20251001":  {"cutoff": "2025-04", "family": "Claude 4.5"},
+}
+
+
+def probe_model_identity(base_url: str, api_key: str, model: str,
+                         verbose: bool = False) -> Fingerprint:
+    """模型身份验证: 通过知识截止时间和自我认知验证模型真实性
+
+    检测维度:
+      1. 模型自报名称是否与请求模型一致
+      2. 知识截止时间是否与官方定义匹配
+      3. 模型家族认知是否正确
+    """
+    fp = Fingerprint()
+    fp.probe_type = "model_identity"
+    fp.model_requested = model
+    headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": api_key,
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    expected = MODEL_KNOWLEDGE_CUTOFF.get(model, {})
+    expected_cutoff = expected.get("cutoff", "")
+    expected_family = expected.get("family", "")
+
+    payload = {
+        "model": model,
+        "max_tokens": 512,
+        "system": [
+            {
+                "type": "text",
+                "text": "Answer precisely and concisely. No hedging, no disclaimers.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        "messages": [{"role": "user", "content":
+            "Please answer these 3 questions in exactly this format, one per line:\n"
+            "MODEL_NAME: [your exact model name/ID]\n"
+            "KNOWLEDGE_CUTOFF: [YYYY-MM format]\n"
+            "MODEL_FAMILY: [your model family name, e.g. Claude 3.5, Claude 4, etc.]\n"
+            "Answer ONLY in the format above, nothing else."}],
+    }
+    url = f"{base_url}/v1/messages"
+
+    t0 = time.time()
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    except requests.exceptions.RequestException as e:
+        fp.error = str(e)
+        return fp
+    fp.latency_ms = int((time.time() - t0) * 1000)
+
+    if resp.status_code != 200:
+        fp.error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+        return fp
+
+    try:
+        body = resp.json()
+    except ValueError:
+        fp.error = "响应体非 JSON"
+        return fp
+
+    fp.msg_id = body.get("id", "")
+    fp.msg_id_source, fp.msg_id_format = classify_msg_id(fp.msg_id)
+    fp.model = body.get("model", "")
+    extract_usage_to_fp(fp, body)
+    fp.raw_headers = dict(resp.headers)
+    fp.proxy_platform, fp.proxy_headers = detect_proxy_platform(resp.headers)
+
+    # 解析回答
+    text = ""
+    for block in body.get("content", []):
+        if block.get("type") == "text":
+            text += block.get("text", "")
+
+    reported_model = ""
+    reported_cutoff = ""
+    reported_family = ""
+
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if line.upper().startswith("MODEL_NAME:"):
+            reported_model = line.split(":", 1)[1].strip()
+        elif line.upper().startswith("KNOWLEDGE_CUTOFF:"):
+            reported_cutoff = line.split(":", 1)[1].strip()
+        elif line.upper().startswith("MODEL_FAMILY:"):
+            reported_family = line.split(":", 1)[1].strip()
+
+    # 将解析结果存入 behavioral_anomalies 用于证据展示
+    fp.behavioral_anomalies.append(f"自报模型: {reported_model}")
+    fp.behavioral_anomalies.append(f"自报截止: {reported_cutoff}")
+    fp.behavioral_anomalies.append(f"自报家族: {reported_family}")
+
+    # 检测异常
+    # 1. 模型名检测
+    if reported_model:
+        model_base = model.split("-202")[0] if "-202" in model else model
+        reported_base = reported_model.lower().replace(" ", "-")
+        if model_base.lower() not in reported_base and reported_base not in model_base.lower():
+            fp.behavioral_anomalies.append(
+                f"!! 模型自报名 '{reported_model}' 与请求模型 '{model}' 不一致")
+
+    # 2. 知识截止时间检测
+    if reported_cutoff and expected_cutoff:
+        # 提取年月进行比较
+        cutoff_clean = reported_cutoff.strip().replace("early ", "").replace("late ", "")[:7]
+        if expected_cutoff not in reported_cutoff and cutoff_clean != expected_cutoff:
+            fp.behavioral_anomalies.append(
+                f"!! 知识截止 '{reported_cutoff}' 与预期 '{expected_cutoff}' 不一致")
+
+    # 3. 模型家族检测
+    if reported_family and expected_family:
+        if expected_family.lower() not in reported_family.lower():
+            fp.behavioral_anomalies.append(
+                f"!! 模型家族 '{reported_family}' 与预期 '{expected_family}' 不一致")
+
+    return fp
+
+
 def probe_web_search(base_url: str, api_key: str, model: str,
                      verbose: bool = False) -> Fingerprint:
     """Web Search 检测: 验证 web_search 工具是否真正搜索并返回实时结果
@@ -1880,7 +2025,7 @@ def probe_web_search(base_url: str, api_key: str, model: str,
         "Authorization": f"Bearer {api_key}",
     }
 
-    # 用实时性强的问题 → 必须真正搜索才能回答
+    # 用固定可验证的实时问题 → 必须真正搜索才能回答
     today = datetime.date.today()
     today_str = today.strftime("%Y年%m月%d日")
 
@@ -1890,7 +2035,7 @@ def probe_web_search(base_url: str, api_key: str, model: str,
         "system": [
             {
                 "type": "text",
-                "text": "You are a helpful assistant. Always use the web_search tool when asked about current events.",
+                "text": "You are a helpful assistant. Always use the web_search tool when asked about current events. Answer in Chinese.",
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -1900,9 +2045,10 @@ def probe_web_search(base_url: str, api_key: str, model: str,
             "max_uses": 3,
         }],
         "messages": [{"role": "user", "content":
-            f"今天是{today_str}。请搜索并告诉我今天的主要新闻头条是什么？"
-            f"我需要你用 web_search 工具进行搜索，然后列出至少3条新闻标题和来源URL。"
-            f"请务必搜索，不要凭记忆回答。"}],
+            f"今天是{today_str}。请用 web_search 工具搜索以下信息并回答：\n"
+            f"1. 今天北京的天气（温度、天气状况）\n"
+            f"2. 今天的国际金价（美元/盎司）\n"
+            f"请务必使用搜索工具获取实时数据，不要凭记忆回答。列出数据来源URL。"}],
     }
     url = f"{base_url}/v1/messages"
 
@@ -2028,6 +2174,9 @@ def probe_web_search(base_url: str, api_key: str, model: str,
     urls_in_text = url_pattern.findall(text_content)
     if len(urls_in_text) >= 2:
         has_real_urls = True
+
+    # 保存搜索回答摘要 (截取前 300 字用于证据展示)
+    fp.web_search_text_response = text_content[:300].strip() if text_content else ""
 
     # 综合判定
     if has_server_tool_use and has_server_tool_result and has_web_search_result:
@@ -2895,6 +3044,23 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
             scores["bedrock_converse"] += 3
             evidence.append(f"{tag} model:       {fp.model}  -> anthropic.* (Bedrock)")
 
+        # ── 4b. 返回模型名 vs 请求模型名一致性 ──
+        if fp.model and fp.model_requested and fp.model != fp.model_requested:
+            # 返回的 model 字段和请求的不一致 → 强证据
+            returned = fp.model
+            requested = fp.model_requested
+            # 排除已知的正常别名映射 (如 claude-opus-4-6 -> claude-opus-4-6-20260301)
+            # 只有完全不同的模型名才算异常
+            is_alias = (requested in returned) or (returned in requested)
+            if not is_alias:
+                scores["anthropic"] = max(0, scores["anthropic"] - 5)
+                scores["custom_reverse"] += 10
+                evidence.append(
+                    f"[模型一致性] 请求 {requested} 但返回 {returned} → 模型名不一致 (强证据)")
+            else:
+                evidence.append(
+                    f"[模型一致性] 请求 {requested}, 返回 {returned} (别名映射, 正常)")
+
         # ── 5. service_tier / inference_geo ──
         if fp.has_service_tier:
             scores["anthropic"] += 3
@@ -3122,6 +3288,12 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
                 "[注入检测] 检测到注入内容，已归属已知来源")
 
     # ── 七次修正: 错误消息结构指纹 (反绕过) ──
+    # 检查是否已识别为 OneAPI/NewAPI 中转平台
+    is_oneapi_platform = any(
+        fp.proxy_platform and "oneapi" in fp.proxy_platform.lower()
+        for fp in fingerprints if not fp.error or fp.proxy_platform
+    )
+
     error_struct_fps = [fp for fp in fingerprints
                         if fp.probe_type and fp.probe_type.startswith("error_")]
     for efp in error_struct_fps:
@@ -3136,6 +3308,19 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
             evidence.append(
                 f"[错误结构] {efp.probe_type}: Google/Vertex 错误格式 "
                 f"(status={efp.error_type_string}) → 后端泄露 Vertex 结构 (强证据)")
+        elif efp.error_structure == "vertex_uncertain":
+            # status 为空，可能是 OneAPI/NewAPI 的错误格式误判
+            if is_oneapi_platform:
+                # OneAPI 检测到 → 这个 Vertex 错误结构很可能是 OneAPI 自身的
+                evidence.append(
+                    f"[错误结构] {efp.probe_type}: 类 Vertex 错误格式但 status 为空，"
+                    f"且已检测到 OneAPI/NewAPI → 可能是中转平台自身的错误格式，非 Vertex 后端")
+            else:
+                # 未检测到 OneAPI，但 status 为空仍然可疑
+                scores["antigravity"] += 4
+                evidence.append(
+                    f"[错误结构] {efp.probe_type}: 类 Vertex 错误格式但 status 为空 "
+                    f"→ 可能是 Vertex 或中转平台自身格式 (弱证据)")
         elif efp.error_structure == "anthropic":
             # Anthropic 错误结构是标准格式，不加分（代理可能已规范化）
             pass
@@ -3187,18 +3372,45 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
                 f"{'; '.join(bfp.sse_corrupted_fragments[:3])}")
             # 推断真实来源 (块边界替换说明代理在做逐块替换)
             scores["anthropic"] = max(0, scores["anthropic"] - 4)
-            # 根据残片推断来源
+            # 根据残片推断来源 — 同一响应可能泄露多种后端标记
             frag_text = " ".join(bfp.sse_corrupted_fragments).lower()
-            if "tooluse_" in frag_text or "use_" in frag_text:
+            has_kiro_frag = "tooluse_" in frag_text or "use_" in frag_text
+            has_bdrk_frag = "bdrk_" in frag_text
+            has_vrtx_frag = "vrtx_" in frag_text
+
+            if has_kiro_frag:
                 scores["bedrock_converse"] += 6
-            elif "bdrk_" in frag_text:
+                evidence.append("[边界] 检测到 tooluse_ 残片 → Bedrock Converse (Kiro)")
+            if has_bdrk_frag:
                 scores["bedrock_invoke"] += 6
-            elif "vrtx_" in frag_text:
+                evidence.append("[边界] 检测到 bdrk_ 残片 → Bedrock InvokeModel")
+            if has_vrtx_frag:
                 scores["antigravity"] += 6
-            else:
+                evidence.append("[边界] 检测到 vrtx_ 残片 → Vertex AI")
+            if not has_kiro_frag and not has_bdrk_frag and not has_vrtx_frag:
                 # 无法确定来源，但确认有替换
                 scores["bedrock_converse"] += 3
                 scores["antigravity"] += 3
+
+    # ── 9b: 模型身份验证 (知识截止 + 自我认知) ──
+    identity_fps = [fp for fp in fingerprints if fp.probe_type == "model_identity"]
+    for ifp in identity_fps:
+        anomaly_count = 0
+        for anomaly in ifp.behavioral_anomalies:
+            evidence.append(f"[模型身份] {anomaly}")
+            if anomaly.startswith("!!"):
+                anomaly_count += 1
+        if anomaly_count >= 2:
+            # 多项不一致 → 强证据模型替换
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 10
+            evidence.append(
+                f"[模型身份] {anomaly_count} 项身份信息不一致 → 高度疑似模型替换 (强证据)")
+        elif anomaly_count == 1:
+            scores["anthropic"] = max(0, scores["anthropic"] - 3)
+            scores["custom_reverse"] += 5
+            evidence.append(
+                "[模型身份] 1 项身份信息不一致 → 可能存在模型替换")
 
     # ── 十次修正: 跨字段一致性检查 (反绕过，最后执行) ──
     has_anthropic_tool = any(fp.tool_id_source == "anthropic" for fp in valid_fps)
@@ -3305,16 +3517,26 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
                     f"[缓存] 延迟比 {cfp.cache_latency_ratio:.2f} (正常范围)")
 
     # ── 十二次修正: Web Search 检测 ──
-    websearch_fps = [fp for fp in valid_fps if fp.probe_type == "web_search"]
+    # 注意: 用 fingerprints 而非 valid_fps，因为 web_search 探测失败(HTTP 400等)也是重要证据
+    websearch_fps = [fp for fp in fingerprints if fp.probe_type == "web_search"]
+    has_websearch_probe = len(websearch_fps) > 0
+    websearch_is_native = False
+
     for wfp in websearch_fps:
+        # 先展示搜索回答内容
+        resp_preview = wfp.web_search_text_response[:200] if wfp.web_search_text_response else ""
+        if resp_preview:
+            evidence.append(f"[Web搜索] 搜索回答: {resp_preview}")
+
         if wfp.web_search_native and wfp.web_search_has_server_tool:
+            websearch_is_native = True
             if wfp.web_search_result_format == "native":
-                scores["anthropic"] += 4
+                scores["anthropic"] += 8
                 evidence.append(
                     f"[Web搜索] 原生 server_tool (srvtoolu_) + encrypted_url "
-                    f"→ 确认 Anthropic 原生 Web Search ({wfp.web_search_result_count} 条结果)")
+                    f"→ 确认 Anthropic 原生 Web Search ({wfp.web_search_result_count} 条结果, 强证据)")
             else:
-                scores["anthropic"] += 2
+                scores["anthropic"] += 4
                 evidence.append(
                     f"[Web搜索] server_tool 存在但格式: {wfp.web_search_result_format} "
                     f"→ 可能是原生 Web Search (部分字段缺失)")
@@ -3354,12 +3576,25 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
             evidence.append(
                 "[Web搜索] 模型自行调用 tool 而非 server_tool → 代理未实现原生 web_search (强证据)")
         elif wfp.web_search_anomaly == "tool_not_supported":
-            evidence.append("[Web搜索] web_search 工具不被支持 → 代理未启用搜索功能")
+            # web_search 不被支持 → 百分百不是官方
+            scores["anthropic"] = max(0, scores["anthropic"] - 10)
+            scores["custom_reverse"] += 15
+            evidence.append(
+                "[Web搜索] web_search 工具不被支持 (HTTP 400) → 非官方 API (官方必定支持 web_search)")
         elif wfp.web_search_anomaly == "no_search_executed":
-            scores["anthropic"] = max(0, scores["anthropic"] - 1)
-            evidence.append("[Web搜索] 请求含 web_search 但未执行搜索 → 搜索功能被代理忽略")
+            scores["anthropic"] = max(0, scores["anthropic"] - 6)
+            scores["custom_reverse"] += 8
+            evidence.append(
+                "[Web搜索] 请求含 web_search 但未执行搜索 → 搜索功能被代理忽略 (强证据)")
         elif wfp.error:
-            evidence.append(f"[Web搜索] 探测失败: {wfp.error[:60]}")
+            # 探测失败也是重要信号 (官方不会对 web_search 报错)
+            if "400" in wfp.error or "tool" in wfp.error.lower():
+                scores["anthropic"] = max(0, scores["anthropic"] - 8)
+                scores["custom_reverse"] += 12
+                evidence.append(
+                    f"[Web搜索] 探测报错: {wfp.error[:80]} → 代理不支持 web_search (非官方)")
+            else:
+                evidence.append(f"[Web搜索] 探测失败: {wfp.error[:80]}")
         else:
             # 没有匹配到任何已知模式
             fmt = wfp.web_search_result_format or "unknown"
@@ -4184,6 +4419,7 @@ def detect_single_model(base_url: str, api_key: str, model: str,
             probe_tasks.append(("行为指纹", probe_behavior, (base_url, api_key, model, verbose), "extend"))
             probe_tasks.append(("SSE边界", probe_sse_boundary, (base_url, api_key, model, verbose), "append"))
         probe_tasks.append(("缓存", probe_cache, (base_url, api_key, model, verbose), "append"))
+        probe_tasks.append(("模型身份", probe_model_identity, (base_url, api_key, model, verbose), "append"))
         if not lite:
             probe_tasks.append(("Web搜索", probe_web_search, (base_url, api_key, model, verbose), "append"))
             probe_tasks.append(("压缩", probe_auto_compression, (base_url, api_key, model, verbose), "append"))
@@ -4797,6 +5033,7 @@ def detect_full(base_url: str, api_key: str,
                 probe_tasks.append(("行为指纹", probe_behavior, (base_url, api_key, model, False), "extend"))
                 probe_tasks.append(("SSE边界", probe_sse_boundary, (base_url, api_key, model, False), "append"))
             probe_tasks.append(("缓存", probe_cache, (base_url, api_key, model, False), "append"))
+            probe_tasks.append(("模型身份", probe_model_identity, (base_url, api_key, model, False), "append"))
             if not lite:
                 probe_tasks.append(("Web搜索", probe_web_search, (base_url, api_key, model, False), "append"))
                 probe_tasks.append(("压缩", probe_auto_compression, (base_url, api_key, model, False), "append"))
