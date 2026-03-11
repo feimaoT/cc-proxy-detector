@@ -98,33 +98,90 @@ python scripts/detect.py --scan-all --json --output report.json
 | `ANTHROPIC_AUTH_TOKEN` | API Key (优先) |
 | `FACTORY_API_KEY` | API Key (备选) |
 
-## 服务器部署
+## 部署指南
 
-### 直接部署
+### 方式一：一键部署（最简单）
+
+适合快速体验，在任意 Linux 服务器上执行：
 
 ```bash
-# 1. 克隆代码
+# 1. 安装 Git 和 Python（如果没有）
+sudo apt update && sudo apt install -y git python3 python3-pip
+
+# 2. 拉取代码
 git clone https://github.com/feimaoT/cc-proxy-detector.git
 cd cc-proxy-detector
 
-# 2. 安装依赖
-pip install -r requirements.txt
+# 3. 执行一键部署脚本
+chmod +x deploy.sh
+./deploy.sh
+```
 
-# 3. 启动服务 (默认端口 5000)
+脚本会自动判断环境：
+- **有 Docker** → 自动构建镜像并启动容器
+- **无 Docker** → 安装 Python 依赖并后台启动服务
+
+部署完成后访问 `http://你的服务器IP:5000` 即可使用。
+
+> 如果需要外网访问，记得在服务器安全组/防火墙放行 5000 端口，或配置 Nginx 反向代理（见下方）。
+
+---
+
+### 方式二：手动部署（推荐生产环境）
+
+#### 第一步：拉取代码
+
+```bash
+git clone https://github.com/feimaoT/cc-proxy-detector.git
+cd cc-proxy-detector
+```
+
+#### 第二步：安装依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+依赖说明：
+- `requests` — HTTP 请求
+- `flask` — Web 框架
+- `waitress` — 生产级 WSGI 服务器（16 线程并发，支持多人同时使用）
+
+#### 第三步：启动服务
+
+```bash
+# 前台启动（调试用）
 cd web && python app.py
+
+# 后台启动（生产用）
+cd web && nohup python app.py > ../detector.log 2>&1 &
 
 # 自定义端口
 PORT=8080 python app.py
 ```
 
-生产环境会自动使用 `waitress` 多线程 WSGI 服务器（16 线程并发），支持多人同时使用。
+启动后终端会显示：
+```
+CC Proxy Detector v9.0 - Web UI
+http://localhost:5000
+Server: waitress (多线程并发)
+```
 
-### 反向代理 (Nginx)
+#### 第四步：配置 Nginx 反向代理
+
+将服务通过域名对外暴露，避免直接暴露端口：
+
+```bash
+# 安装 Nginx（如果没有）
+sudo apt install -y nginx
+```
+
+创建配置文件 `/etc/nginx/sites-available/cc-detector`：
 
 ```nginx
 server {
     listen 80;
-    server_name detect.example.com;
+    server_name detect.yourdomain.com;  # 改成你的域名
 
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -132,7 +189,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
-        # SSE 支持 (实时进度)
+        # SSE 实时进度必须关闭缓冲，否则进度条不动
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 300s;
@@ -140,10 +197,36 @@ server {
 }
 ```
 
-### Systemd 服务
+启用配置：
+
+```bash
+# 创建软链接启用站点
+sudo ln -s /etc/nginx/sites-available/cc-detector /etc/nginx/sites-enabled/
+
+# 测试配置是否正确
+sudo nginx -t
+
+# 重载 Nginx
+sudo nginx -s reload
+```
+
+现在访问 `http://detect.yourdomain.com` 即可。
+
+#### 第五步（可选）：配置 HTTPS
+
+```bash
+# 安装 Certbot
+sudo apt install -y certbot python3-certbot-nginx
+
+# 自动申请证书并配置 Nginx
+sudo certbot --nginx -d detect.yourdomain.com
+```
+
+#### 第六步（可选）：设置开机自启
+
+创建 Systemd 服务文件 `/etc/systemd/system/cc-detector.service`：
 
 ```ini
-# /etc/systemd/system/cc-detector.service
 [Unit]
 Description=CC Proxy Detector Web UI
 After=network.target
@@ -162,112 +245,83 @@ WantedBy=multi-user.target
 ```
 
 ```bash
+# 把项目放到 /opt（如果还没有）
+sudo cp -r /path/to/cc-proxy-detector /opt/cc-proxy-detector
+
+# 启用并启动服务
+sudo systemctl daemon-reload
 sudo systemctl enable cc-detector
 sudo systemctl start cc-detector
+
+# 查看状态
+sudo systemctl status cc-detector
+
+# 查看日志
+sudo journalctl -u cc-detector -f
 ```
 
-## Docker 部署
+---
 
-### Dockerfile
+### 方式三：Docker 部署
 
-在项目根目录创建 `Dockerfile`:
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY scripts/ scripts/
-COPY web/ web/
-
-EXPOSE 5000
-
-CMD ["python", "web/app.py"]
-```
-
-### 构建和运行
+#### 快速启动
 
 ```bash
-# 构建镜像
+# 1. 拉取代码
+git clone https://github.com/feimaoT/cc-proxy-detector.git
+cd cc-proxy-detector
+
+# 2. 构建镜像
 docker build -t cc-proxy-detector .
 
-# 运行容器
+# 3. 运行容器
 docker run -d \
   --name cc-detector \
   -p 5000:5000 \
   --restart unless-stopped \
   cc-proxy-detector
-
-# 自定义端口
-docker run -d -p 8080:5000 -e PORT=5000 cc-proxy-detector
 ```
 
-### Docker Compose
-
-创建 `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  detector:
-    build: .
-    ports:
-      - "5000:5000"
-    restart: unless-stopped
-    environment:
-      - PORT=5000
-```
+#### Docker Compose（推荐）
 
 ```bash
-# 一键启动
+# 1. 拉取代码
+git clone https://github.com/feimaoT/cc-proxy-detector.git
+cd cc-proxy-detector
+
+# 2. 一键启动
 docker compose up -d
 
-# 查看日志
+# 3. 查看日志
 docker compose logs -f
+
+# 4. 停止服务
+docker compose down
 ```
 
-## 一键部署脚本
+#### Docker + Nginx
 
-在项目根目录创建 `deploy.sh`:
+Docker 启动后，Nginx 反向代理配置和上面一样，`proxy_pass` 指向 `http://127.0.0.1:5000`。
 
-```bash
-#!/bin/bash
-set -e
+---
 
-echo "CC Proxy Detector v9.0 - 一键部署"
-echo "================================="
+### 部署后验证
 
-# 检测 Docker
-if command -v docker &> /dev/null; then
-    echo "[1/3] 检测到 Docker，使用容器部署..."
-    docker build -t cc-proxy-detector .
-    docker rm -f cc-detector 2>/dev/null || true
-    docker run -d --name cc-detector -p 5000:5000 --restart unless-stopped cc-proxy-detector
-    echo "[OK] 服务已启动: http://localhost:5000"
-else
-    echo "[1/3] 未检测到 Docker，使用直接部署..."
+无论哪种方式部署，部署完成后：
 
-    # 安装依赖
-    echo "[2/3] 安装 Python 依赖..."
-    pip install -r requirements.txt
+1. 浏览器打开 `http://你的服务器IP:5000`（或你配置的域名）
+2. 输入要检测的中转站地址和 API Key
+3. 点击"开始检测"或"低消耗检测"
+4. 等待检测完成，查看报告
 
-    # 启动服务
-    echo "[3/3] 启动服务..."
-    cd web && nohup python app.py > ../detector.log 2>&1 &
-    echo "[OK] 服务已启动: http://localhost:5000"
-    echo "     日志: tail -f detector.log"
-fi
-```
+### 常见问题
 
-```bash
-# 使用
-chmod +x deploy.sh
-./deploy.sh
-```
+| 问题 | 解决方案 |
+|------|---------|
+| 访问不了页面 | 检查防火墙/安全组是否放行端口 |
+| SSE 进度不动 | Nginx 需要加 `proxy_buffering off` |
+| 502 Bad Gateway | 检查后端服务是否在运行：`curl http://127.0.0.1:5000` |
+| 权限不足 | `chmod +x deploy.sh`，或用 `sudo` 执行 |
 
 ## API 接口
 
@@ -280,7 +334,7 @@ chmod +x deploy.sh
 | `/api/stop/<task_id>` | POST | 停止检测任务 |
 | `/api/check-models` | POST | 模型可用性检查 |
 
-**限流**: 同一 IP 每分钟最多 6 次请求。
+**限流**: 同一 IP 每分钟最多 6 次请求，全局最大并发 5 个检测任务。
 
 ## 项目结构
 
