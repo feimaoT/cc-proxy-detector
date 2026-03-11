@@ -102,28 +102,43 @@ python scripts/detect.py --scan-all --json --output report.json
 
 ### 方式一：一键部署（最简单）
 
-适合快速体验，在任意 Linux 服务器上执行：
+只需一行命令，脚本会自动完成所有步骤：检测系统 → 安装 Git/Python → 拉取代码 → 创建虚拟环境 → 安装依赖 → 启动服务。
+
+**支持系统**: Ubuntu/Debian, CentOS/RHEL/Fedora, macOS
 
 ```bash
-# 1. 安装 Git 和 Python（如果没有）
-sudo apt update && sudo apt install -y git python3 python3-pip
+# 方法 A：全新服务器，一行命令从零部署（推荐）
+curl -fsSL https://raw.githubusercontent.com/feimaoT/cc-proxy-detector/main/deploy.sh -o deploy.sh && chmod +x deploy.sh && ./deploy.sh
 
-# 2. 拉取代码
-git clone https://github.com/feimaoT/cc-proxy-detector.git
-cd cc-proxy-detector
-
-# 3. 执行一键部署脚本
-chmod +x deploy.sh
-./deploy.sh
+# 方法 B：已有代码，在项目目录内执行
+git clone https://github.com/feimaoT/cc-proxy-detector.git && cd cc-proxy-detector && chmod +x deploy.sh && ./deploy.sh
 ```
 
-脚本会自动判断环境：
-- **有 Docker** → 自动构建镜像并启动容器
-- **无 Docker** → 安装 Python 依赖并后台启动服务
+脚本会自动完成：
+
+| 步骤 | 说明 |
+|------|------|
+| 1. 检测系统 | 自动识别 Ubuntu/CentOS/macOS，选择对应包管理器 |
+| 2. 安装依赖 | 自动安装 Git、Python3、pip、venv（跳过已有的） |
+| 3. 拉取代码 | 自动 git clone（如果在项目目录内则 git pull 更新） |
+| 4. Python 环境 | 自动创建虚拟环境 `venv/`，在其中安装依赖（兼容 Ubuntu 22.04+ PEP 668）|
+| 5. 启动服务 | 后台启动，自动输出访问地址、PID、日志路径 |
+
+**Docker 用户**：脚本检测到 Docker 会自动用容器部署。如需强制直接部署：
+
+```bash
+NO_DOCKER=1 ./deploy.sh
+```
+
+**自定义端口**：
+
+```bash
+PORT=8080 ./deploy.sh
+```
 
 部署完成后访问 `http://你的服务器IP:5000` 即可使用。
 
-> 如果需要外网访问，记得在服务器安全组/防火墙放行 5000 端口，或配置 Nginx 反向代理（见下方）。
+> 如果需要外网访问，记得在服务器安全组/防火墙放行端口，或配置 Nginx 反向代理（见下方）。
 
 ---
 
