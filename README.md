@@ -182,99 +182,6 @@ http://localhost:5000
 Server: waitress (多线程并发)
 ```
 
-#### 第四步：配置 Nginx 反向代理
-
-将服务通过域名对外暴露，避免直接暴露端口：
-
-```bash
-# 安装 Nginx（如果没有）
-sudo apt install -y nginx
-```
-
-创建配置文件 `/etc/nginx/sites-available/cc-detector`：
-
-```nginx
-server {
-    listen 80;
-    server_name detect.yourdomain.com;  # 改成你的域名
-
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-        # SSE 实时进度必须关闭缓冲，否则进度条不动
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 300s;
-    }
-}
-```
-
-启用配置：
-
-```bash
-# 创建软链接启用站点
-sudo ln -s /etc/nginx/sites-available/cc-detector /etc/nginx/sites-enabled/
-
-# 测试配置是否正确
-sudo nginx -t
-
-# 重载 Nginx
-sudo nginx -s reload
-```
-
-现在访问 `http://detect.yourdomain.com` 即可。
-
-#### 第五步（可选）：配置 HTTPS
-
-```bash
-# 安装 Certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# 自动申请证书并配置 Nginx
-sudo certbot --nginx -d detect.yourdomain.com
-```
-
-#### 第六步（可选）：设置开机自启
-
-创建 Systemd 服务文件 `/etc/systemd/system/cc-detector.service`：
-
-```ini
-[Unit]
-Description=CC Proxy Detector Web UI
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/opt/cc-proxy-detector/web
-ExecStart=/usr/bin/python3 app.py
-Restart=always
-RestartSec=5
-Environment=PORT=5000
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-# 把项目放到 /opt（如果还没有）
-sudo cp -r /path/to/cc-proxy-detector /opt/cc-proxy-detector
-
-# 启用并启动服务
-sudo systemctl daemon-reload
-sudo systemctl enable cc-detector
-sudo systemctl start cc-detector
-
-# 查看状态
-sudo systemctl status cc-detector
-
-# 查看日志
-sudo journalctl -u cc-detector -f
-```
-
 ---
 
 ### 方式三：Docker 部署
@@ -314,9 +221,147 @@ docker compose logs -f
 docker compose down
 ```
 
-#### Docker + Nginx
+---
 
-Docker 启动后，Nginx 反向代理配置和上面一样，`proxy_pass` 指向 `http://127.0.0.1:5000`。
+### 配置 Nginx 反向代理（可选）
+
+无论使用哪种方式部署，都可以通过 Nginx 反向代理对外暴露服务，避免直接暴露端口。
+
+两种方式任选其一：
+
+**方式 A：子路径模式**（推荐，在已有域名下挂载 `/detector`）
+
+先找到你当前域名对应的 Nginx 配置文件：
+
+```bash
+# 查看所有已启用的站点配置
+ls /etc/nginx/sites-enabled/
+
+# 或者直接搜索包含你域名的配置文件
+grep -r "server_name" /etc/nginx/sites-enabled/
+
+# 常见位置（按顺序查找）：
+#   /etc/nginx/sites-enabled/default          ← 默认站点
+#   /etc/nginx/sites-enabled/yourdomain.com   ← 按域名命名
+#   /etc/nginx/conf.d/yourdomain.conf         ← 部分系统用 conf.d 目录
+```
+
+找到后编辑该文件，在 `server { }` 块内添加 location：
+
+```bash
+# 示例：编辑默认站点配置
+sudo nano /etc/nginx/sites-enabled/default
+```
+
+在 `server { }` 块内（和其他 `location` 同级）添加：
+
+```nginx
+    location /detector/ {
+        proxy_pass http://127.0.0.1:5000/;  # 注意末尾的 / 不能省
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # SSE 实时进度必须关闭缓冲，否则进度条不动
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+    }
+```
+
+保存后测试并重载：
+
+```bash
+sudo nginx -t && sudo nginx -s reload
+```
+
+访问地址：`http://yourdomain.com/detector`
+
+**方式 B：独立域名模式**
+
+创建配置文件 `/etc/nginx/sites-available/cc-detector`：
+
+```nginx
+server {
+    listen 80;
+    server_name detect.yourdomain.com;  # 改成你的域名
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # SSE 实时进度必须关闭缓冲，否则进度条不动
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+启用配置：
+
+```bash
+# 创建软链接启用站点
+sudo ln -s /etc/nginx/sites-available/cc-detector /etc/nginx/sites-enabled/
+
+# 测试配置是否正确
+sudo nginx -t
+
+# 重载 Nginx
+sudo nginx -s reload
+```
+
+现在访问 `http://detect.yourdomain.com` 即可。
+
+### 配置 HTTPS（可选）
+
+```bash
+# 安装 Certbot
+sudo apt install -y certbot python3-certbot-nginx
+
+# 自动申请证书并配置 Nginx
+sudo certbot --nginx -d detect.yourdomain.com
+```
+
+### 设置开机自启（可选）
+
+创建 Systemd 服务文件 `/etc/systemd/system/cc-detector.service`：
+
+```ini
+[Unit]
+Description=CC Proxy Detector Web UI
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/cc-proxy-detector/web
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=5
+Environment=PORT=5000
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# 把项目放到 /opt（如果还没有）
+sudo cp -r /path/to/cc-proxy-detector /opt/cc-proxy-detector
+
+# 启用并启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable cc-detector
+sudo systemctl start cc-detector
+
+# 查看状态
+sudo systemctl status cc-detector
+
+# 查看日志
+sudo journalctl -u cc-detector -f
+```
 
 ---
 

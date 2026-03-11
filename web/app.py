@@ -20,6 +20,10 @@ import detect
 
 app = Flask(__name__)
 
+# 部署子路径前缀 (如 Nginx 反代到 /detector/)
+# 设置环境变量 URL_PREFIX=/detector 即可，前端会自动拼接
+URL_PREFIX = os.environ.get("URL_PREFIX", "").strip().rstrip("/")
+
 # 任务存储 (线程安全)
 tasks = {}
 tasks_lock = threading.Lock()
@@ -123,7 +127,7 @@ class DetectTask:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", url_prefix=URL_PREFIX)
 
 
 @app.route("/api/detect", methods=["POST"])

@@ -638,6 +638,10 @@ Chart.defaults.color = '#8b949e';
 Chart.defaults.borderColor = '#253040';
 Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
+// 自动检测部署路径，支持子路径反代 (如 /detector/)
+// 优先使用服务端注入的前缀，回退到自动检测
+const BASE_PATH = '{{ url_prefix }}' || window.location.pathname.replace(/\/+$/, '');
+
 function toggleParallelNotice() {
   document.getElementById('parallel_notice').style.display =
     document.getElementById('opt_parallel').checked ? 'block' : 'none';
@@ -691,7 +695,7 @@ function startDetect(lite) {
   document.getElementById('progress_bar').classList.remove('done');
   document.getElementById('progress_text').textContent = '启动检测中...';
 
-  fetch('/api/detect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(options) })
+  fetch(BASE_PATH + '/api/detect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(options) })
   .then(r => {
     if (r.status === 429) return r.json().then(d => { throw new Error(d.error); });
     return r.json();
@@ -703,7 +707,7 @@ function startDetect(lite) {
 
 function stopDetect() {
   if (!currentTaskId) return;
-  fetch('/api/stop/' + currentTaskId, { method: 'POST' })
+  fetch(BASE_PATH + '/api/stop/' + currentTaskId, { method: 'POST' })
   .then(r => r.json()).then(data => {
     if (data.error) addLog('停止失败: ' + data.error, true);
     else addLog('正在停止检测...');
@@ -742,7 +746,7 @@ function checkModels() {
   const body = { base_url: baseUrl, api_key: apiKey };
   if (scanModels) body.scan_models = scanModels;
 
-  fetch('/api/check-models', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+  fetch(BASE_PATH + '/api/check-models', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
   .then(r => {
     if (r.status === 429) return r.json().then(d => { throw new Error(d.error); });
     return r.json();
@@ -778,7 +782,7 @@ function renderAvailability(data) {
 }
 
 function listenProgress(taskId) {
-  const es = new EventSource('/api/progress/' + taskId);
+  const es = new EventSource(BASE_PATH + '/api/progress/' + taskId);
   currentES = es;
   es.onmessage = function(event) {
     const d = JSON.parse(event.data);
@@ -807,7 +811,7 @@ function listenProgress(taskId) {
 }
 
 function fetchReport(taskId) {
-  fetch('/api/report/' + taskId).then(r => r.json()).then(report => {
+  fetch(BASE_PATH + '/api/report/' + taskId).then(r => r.json()).then(report => {
     currentReport = report; renderReport(report);
     resetButtons();
   }).catch(err => {
