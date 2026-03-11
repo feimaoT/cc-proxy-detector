@@ -3126,16 +3126,16 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
                         if fp.probe_type and fp.probe_type.startswith("error_")]
     for efp in error_struct_fps:
         if efp.error_structure == "bedrock":
-            scores["bedrock_invoke"] += 3
-            scores["bedrock_converse"] += 3
+            scores["bedrock_invoke"] += 8
+            scores["bedrock_converse"] += 8
             evidence.append(
                 f"[错误结构] {efp.probe_type}: AWS/Bedrock 错误格式 "
-                f"(type={efp.error_type_string}) → 后端泄露 Bedrock 结构")
+                f"(type={efp.error_type_string}) → 后端泄露 Bedrock 结构 (强证据)")
         elif efp.error_structure == "vertex":
-            scores["antigravity"] += 5
+            scores["antigravity"] += 12
             evidence.append(
                 f"[错误结构] {efp.probe_type}: Google/Vertex 错误格式 "
-                f"(status={efp.error_type_string}) → 后端泄露 Vertex 结构")
+                f"(status={efp.error_type_string}) → 后端泄露 Vertex 结构 (强证据)")
         elif efp.error_structure == "anthropic":
             # Anthropic 错误结构是标准格式，不加分（代理可能已规范化）
             pass
@@ -3276,25 +3276,30 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
     cache_fps = [fp for fp in valid_fps if fp.probe_type == "cache"]
     for cfp in cache_fps:
         if cfp.cache_msg_id_reused:
-            scores["anthropic"] = max(0, scores["anthropic"] - 5)
-            scores["bedrock_converse"] += 3
-            scores["antigravity"] += 3
+            scores["anthropic"] = max(0, scores["anthropic"] - 10)
+            scores["custom_reverse"] += 10
+            scores["bedrock_converse"] += 5
+            scores["antigravity"] += 5
             evidence.append(
-                "[缓存] msg_id 相同 → 响应被缓存复用 (非原生 Anthropic 行为)")
+                "[缓存] msg_id 相同 → 响应被缓存复用 (官方 API 每次生成唯一 msg_id, 强证据)")
         elif cfp.cache_response_identical:
-            scores["anthropic"] = max(0, scores["anthropic"] - 3)
-            scores["bedrock_converse"] += 2
-            scores["antigravity"] += 2
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 8
+            scores["bedrock_converse"] += 4
+            scores["antigravity"] += 4
             evidence.append(
-                "[缓存] 两次相同 prompt 返回完全相同响应 → 疑似代理缓存")
+                "[缓存] 两次相同 prompt 返回完全相同响应 → 代理缓存 (官方 API 每次重新生成, 强证据)")
         elif cfp.cache_is_fake:
-            evidence.append("[缓存] 检测到假缓存行为")
+            scores["custom_reverse"] += 6
+            evidence.append("[缓存] 检测到假缓存行为 (强证据)")
         else:
             evidence.append("[缓存] 未检测到缓存复用 (正常)")
         if cfp.cache_latency_ratio > 0:
             if cfp.cache_latency_ratio < 0.3:
+                scores["custom_reverse"] += 6
+                scores["anthropic"] = max(0, scores["anthropic"] - 4)
                 evidence.append(
-                    f"[缓存] 第二次延迟仅为第一次的 {cfp.cache_latency_ratio:.0%} → 缓存命中特征")
+                    f"[缓存] 第二次延迟仅为第一次的 {cfp.cache_latency_ratio:.0%} → 缓存命中特征 (强证据)")
             else:
                 evidence.append(
                     f"[缓存] 延迟比 {cfp.cache_latency_ratio:.2f} (正常范围)")
@@ -3314,39 +3319,40 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
                     f"[Web搜索] server_tool 存在但格式: {wfp.web_search_result_format} "
                     f"→ 可能是原生 Web Search (部分字段缺失)")
         elif wfp.web_search_result_format == "mcp_mimic":
-            scores["anthropic"] = max(0, scores["anthropic"] - 3)
-            scores["custom_reverse"] += 3
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 12
             evidence.append(
-                "[Web搜索] server_tool 存在但缺少 encrypted_url → MCP 服务伪装原生 web_search 结构")
+                "[Web搜索] server_tool 存在但缺少 encrypted_url → MCP 服务伪装原生 web_search 结构 (强证据)")
         elif wfp.web_search_result_format == "forged_server_tool":
-            scores["anthropic"] = max(0, scores["anthropic"] - 3)
-            scores["custom_reverse"] += 3
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 12
             evidence.append(
-                "[Web搜索] server_tool_use 块存在但 ID 不是 srvtoolu_ → 伪造的 server tool")
+                "[Web搜索] server_tool_use 块存在但 ID 不是 srvtoolu_ → 伪造的 server tool (强证据)")
         elif wfp.web_search_result_format == "mcp_injected":
-            scores["anthropic"] = max(0, scores["anthropic"] - 3)
-            scores["custom_reverse"] += 4
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 12
             evidence.append(
-                "[Web搜索] 未使用 tool 但文本包含搜索结果和 URL → MCP 搜索结果被注入到文本")
+                "[Web搜索] 未使用 tool 但文本包含搜索结果和 URL → MCP 搜索结果被注入到文本 (强证据)")
         elif wfp.web_search_supported and not wfp.web_search_has_server_tool:
-            scores["anthropic"] = max(0, scores["anthropic"] - 2)
-            scores["custom_reverse"] += 2
+            scores["anthropic"] = max(0, scores["anthropic"] - 6)
+            scores["custom_reverse"] += 10
             evidence.append(
-                "[Web搜索] web_search 有结果但无 srvtoolu_ 前缀 → 代理自实现搜索")
+                "[Web搜索] web_search 有结果但无 srvtoolu_ 前缀 → 代理自实现搜索 (强证据)")
         elif wfp.web_search_result_format == "searxng":
-            scores["anthropic"] = max(0, scores["anthropic"] - 3)
-            scores["custom_reverse"] += 3
+            scores["anthropic"] = max(0, scores["anthropic"] - 8)
+            scores["custom_reverse"] += 12
             evidence.append(
-                "[Web搜索] 搜索结果含 engine/engines 字段 → SearXNG 兜底搜索 (非原生)")
+                "[Web搜索] 搜索结果含 engine/engines 字段 → SearXNG 兜底搜索 (非原生, 强证据)")
         elif wfp.web_search_anomaly and "mcp_trace_detected" in wfp.web_search_anomaly:
-            scores["anthropic"] = max(0, scores["anthropic"] - 2)
-            scores["custom_reverse"] += 3
+            scores["anthropic"] = max(0, scores["anthropic"] - 6)
+            scores["custom_reverse"] += 10
             evidence.append(
-                "[Web搜索] 检测到 MCP 痕迹 → 代理使用 MCP 服务提供搜索功能")
+                "[Web搜索] 检测到 MCP 痕迹 → 代理使用 MCP 服务提供搜索功能 (强证据)")
         elif wfp.web_search_anomaly == "model_called_tool_instead_of_server":
-            scores["anthropic"] = max(0, scores["anthropic"] - 2)
+            scores["anthropic"] = max(0, scores["anthropic"] - 5)
+            scores["custom_reverse"] += 8
             evidence.append(
-                "[Web搜索] 模型自行调用 tool 而非 server_tool → 代理未实现原生 web_search")
+                "[Web搜索] 模型自行调用 tool 而非 server_tool → 代理未实现原生 web_search (强证据)")
         elif wfp.web_search_anomaly == "tool_not_supported":
             evidence.append("[Web搜索] web_search 工具不被支持 → 代理未启用搜索功能")
         elif wfp.web_search_anomaly == "no_search_executed":
@@ -3437,9 +3443,25 @@ def analyze(fingerprints: list[Fingerprint], base_url: str,
             result.confidence = 0.0
             evidence.append("未获取到有效指纹信号")
     else:
-        winner = max(scores, key=scores.get)
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        winner = sorted_scores[0][0]
+        winner_score = sorted_scores[0][1]
+        runner_up_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0
         result.verdict = winner
-        result.confidence = round(scores[winner] / total, 2)
+
+        # 置信度: 基于 winner 和第二名的差距，而非简单占比
+        # 差距越大越确信，同时考虑绝对分数
+        if winner_score == 0:
+            result.confidence = 0.0
+        else:
+            # 分离度: winner 领先第二名的程度
+            separation = (winner_score - runner_up_score) / winner_score
+            # 绝对强度: winner 分数本身是否足够高 (sigmoid 曲线, 10分时约0.73, 20分时约0.95)
+            import math
+            strength = 1.0 / (1.0 + math.exp(-0.2 * (winner_score - 5)))
+            # 综合: 60% 分离度 + 40% 绝对强度
+            result.confidence = round(min(0.6 * separation + 0.4 * strength, 0.99), 2)
+
         # 两个可靠字段都缺失 → 标记可疑
         if winner == "anthropic" and len(missing_flags) >= 2:
             suspicious = True

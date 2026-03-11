@@ -519,6 +519,39 @@
 let currentTaskId = null, currentReport = null, currentES = null;
 let scanMode = 'all'; // 'all' | 'select' | 'single'
 
+// ── localStorage 缓存 ──
+const CACHE_KEY_INPUTS = 'cc_detector_inputs';
+const CACHE_KEY_REPORT = 'cc_detector_report';
+
+function saveInputs() {
+  try {
+    localStorage.setItem(CACHE_KEY_INPUTS, JSON.stringify({
+      base_url: document.getElementById('base_url').value,
+      api_key: document.getElementById('api_key').value,
+    }));
+  } catch(e) {}
+}
+function restoreInputs() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CACHE_KEY_INPUTS));
+    if (d) {
+      if (d.base_url) document.getElementById('base_url').value = d.base_url;
+      if (d.api_key) document.getElementById('api_key').value = d.api_key;
+    }
+  } catch(e) {}
+}
+function saveReport(report) {
+  try {
+    localStorage.setItem(CACHE_KEY_REPORT, JSON.stringify(report));
+  } catch(e) {}
+}
+function restoreReport() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CACHE_KEY_REPORT));
+    if (r) { currentReport = r; renderReport(r); }
+  } catch(e) {}
+}
+
 const DEFAULT_MODELS = [
   'claude-opus-4-6',
   'claude-sonnet-4-6',
@@ -602,6 +635,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('custom_model_input')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); addCustomModel(); }
   });
+  // 恢复缓存的输入和报告
+  restoreInputs();
+  restoreReport();
+  // 输入变化时自动保存
+  document.getElementById('base_url').addEventListener('input', saveInputs);
+  document.getElementById('api_key').addEventListener('input', saveInputs);
 });
 
 const COLORS = {
@@ -830,7 +869,7 @@ function listenProgress(taskId) {
 
 function fetchReport(taskId) {
   fetch(BASE_PATH + '/api/report/' + taskId).then(r => r.json()).then(report => {
-    currentReport = report; renderReport(report);
+    currentReport = report; saveReport(report); renderReport(report);
     resetButtons();
   }).catch(err => {
     addLog('获取报告失败: ' + err.message, true);
@@ -1236,7 +1275,7 @@ const CAT_ICONS = {
   '反绕过': '&#x1F6E1;&#xFE0F;', '一致性': '&#x1F517;', '缓存检测': '&#x1F4BE;',
   'Web搜索': '&#x1F310;', '压缩检测': '&#x1F4E6;', '延迟分析': '&#x23F1;&#xFE0F;',
   '错误分析': '&#x274C;', '流式检测': '&#x1F4E1;', '多轮配对': '&#x1F504;',
-  '行为分析': '&#x1F3AD;', '其他': '&#x1F4CB;'
+  '行为分析': '&#x1F3AD;', '偷鸡检测': '&#x1F412;', '其他': '&#x1F4CB;'
 };
 
 function categorizeEvidence(evidence) {
@@ -1249,6 +1288,7 @@ function categorizeEvidence(evidence) {
     else if (/金丝雀|系统提示|错误结构|边界/.test(e)) push('反绕过', e);
     else if (/一致性/.test(e)) push('一致性', e);
     else if (/缓存/.test(e)) push('缓存检测', e);
+    else if (/偷鸡|模型替换|模型验证/i.test(e)) push('偷鸡检测', e);
     else if (/Web搜索|web.search/i.test(e)) push('Web搜索', e);
     else if (/压缩/.test(e)) push('压缩检测', e);
     else if (/延迟/.test(e)) push('延迟分析', e);
