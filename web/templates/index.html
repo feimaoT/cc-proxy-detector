@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CC Proxy Detector v9.0</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --surface: #131920;
+    --surface2: #1a2230;
+    --border: #253040;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --orange: #db6d28;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 1080px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header .subtitle { color: var(--text-dim); font-size: 0.9rem; margin-top: 4px; }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title::before { content: ''; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); }
+
+  /* Form */
+  .form-row { display: flex; gap: 12px; margin-bottom: 16px; }
+  .form-row .field { flex: 1; }
+  .form-row .field.key-field { flex: 1.2; }
+  label { display: block; font-size: 0.82rem; font-weight: 500; color: var(--text-dim); margin-bottom: 4px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 0.95rem;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; outline: none; transition: border-color 0.2s;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.1); }
+  input::placeholder { color: #384050; }
+
+  .options-row { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 16px; }
+  .option-chip {
+    display: flex; align-items: center; gap: 6px; padding: 4px 0;
+    font-size: 0.82rem; color: var(--text-dim); cursor: pointer; user-select: none;
+  }
+  .option-chip input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+  .option-chip:hover { color: var(--text); }
+
+  .btn-detect {
+    width: 100%; padding: 13px; background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em;
+  }
+  .btn-detect:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(88,166,255,0.25); }
+  .btn-detect:disabled { opacity: 0.5; cursor: not-allowed; transform: none; filter: none; box-shadow: none; }
+
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn-detect { flex: 1; }
+  .btn-check {
+    padding: 13px 24px; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 8px; font-size: 0.95rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .btn-check:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-check:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .availability-result .avail-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+  }
+  .availability-result .avail-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'SF Mono','Fira Code',monospace; font-size: 0.78rem;
+  }
+  .availability-result .avail-item.ok { border-left: 3px solid var(--green); }
+  .availability-result .avail-item.fail { border-left: 3px solid var(--red); opacity: 0.6; }
+  .availability-result .avail-summary {
+    font-size: 0.88rem; margin-bottom: 12px; color: var(--text-dim);
+  }
+  .availability-result .avail-summary strong { color: var(--text); }
+
+  .btn-stop {
+    width: 100%; padding: 13px; background: linear-gradient(135deg, #dc2626, #b91c1c);
+    color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em;
+    margin-top: 8px; display: none;
+  }
+  .btn-stop:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(220,38,38,0.25); }
+  .btn-stop.active { display: block; }
+
+  /* Progress */
+  .progress-section { display: none; margin-bottom: 20px; }
+  .progress-section.active { display: block; }
+  .progress-bar-outer { width: 100%; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+  .progress-bar-inner {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); border-radius: 3px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); width: 0%;
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .progress-bar-inner.done { animation: none; }
+  .progress-text { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 8px; }
+  .log-box {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; max-height: 180px; overflow-y: auto;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; color: var(--text-dim); line-height: 1.9;
+  }
+  .log-box .log-line { white-space: pre-wrap; }
+  .log-box .log-line.error { color: var(--red); }
+
+  /* Report */
+  .report-section { display: none; }
+  .report-section.active { display: block; }
+
+  /* Verdict Banner */
+  .verdict-banner {
+    text-align: center; padding: 28px 24px; border-radius: var(--radius);
+    margin-bottom: 20px; position: relative; overflow: hidden;
+  }
+  .verdict-banner::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+  }
+  .verdict-banner .verdict-icon { font-size: 2.8rem; margin-bottom: 8px; }
+  .verdict-banner .verdict-label { font-size: 1.5rem; font-weight: 700; }
+  .verdict-banner .verdict-sub { font-size: 0.88rem; color: rgba(255,255,255,0.7); margin-top: 4px; }
+  /* 模型替换警告横幅 */
+  .model-sub-alert {
+    background: linear-gradient(135deg, #5c0a0a, #8b1414);
+    border: 2px solid #ff4444;
+    border-radius: 12px;
+    padding: 20px 28px;
+    margin: 16px 0;
+    animation: pulse-border 2s infinite;
+  }
+  .model-sub-alert .alert-title {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #ff6b6b;
+    margin-bottom: 8px;
+  }
+  .model-sub-alert .alert-detail {
+    font-size: 0.95rem;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.6;
+  }
+  .model-sub-alert .alert-meter {
+    margin-top: 12px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .model-sub-alert .alert-meter-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff4444, #ff6b6b);
+    border-radius: 6px;
+    transition: width 0.5s;
+  }
+  .model-sub-alert .alert-stats {
+    display: flex;
+    gap: 24px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .model-sub-alert .alert-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .model-sub-alert .alert-stat-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #ff6b6b;
+  }
+  .model-sub-alert .alert-stat-label {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.6);
+    margin-top: 2px;
+  }
+  @keyframes pulse-border {
+    0%, 100% { border-color: #ff4444; box-shadow: 0 0 8px rgba(255,68,68,0.3); }
+    50% { border-color: #ff6b6b; box-shadow: 0 0 16px rgba(255,68,68,0.5); }
+  }
+  .verdict-anthropic-bg { background: linear-gradient(135deg, #0f3a20, #1a5c35); border: 1px solid #2d6b3f; }
+  .verdict-bedrock_invoke-bg { background: linear-gradient(135deg, #3d2e0a, #5c4a14); border: 1px solid #7a6320; }
+  .verdict-bedrock_converse-bg { background: linear-gradient(135deg, #3d1f0a, #5c3014); border: 1px solid #7a4020; }
+  .verdict-antigravity-bg { background: linear-gradient(135deg, #3d0a0a, #5c1414); border: 1px solid #7a2020; }
+  .verdict-azure-bg { background: linear-gradient(135deg, #0a2a4d, #0e3d6e); border: 1px solid #0078d4; }
+  .verdict-openrouter_reverse-bg { background: linear-gradient(135deg, #2d1a4e, #3d2563); border: 1px solid #a371f7; }
+  .verdict-custom_reverse-bg { background: linear-gradient(135deg, #3d0a2a, #5c1440); border: 1px solid #f778ba; }
+  .verdict-suspicious-bg { background: linear-gradient(135deg, #3d0a0a, #5c1414); border: 1px solid #7a2020; }
+  .verdict-unknown-bg { background: linear-gradient(135deg, #1a1a2e, #2a2a40); border: 1px solid #404060; }
+
+  /* Stats Grid */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center; position: relative; overflow: hidden;
+  }
+  .stat-card::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .stat-card.accent-green::after { background: var(--green); }
+  .stat-card.accent-yellow::after { background: var(--yellow); }
+  .stat-card.accent-red::after { background: var(--red); }
+  .stat-card.accent-blue::after { background: var(--accent); }
+  .stat-card.accent-purple::after { background: var(--purple); }
+  .stat-card.accent-cyan::after { background: var(--cyan); }
+  .stat-card.accent-pink::after { background: #f778ba; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .stat-label { font-size: 0.72rem; color: var(--text-dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* Chart containers */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .chart-card canvas { max-height: 280px; }
+
+  /* Model Cards */
+  .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .model-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; transition: border-color 0.2s; cursor: default;
+  }
+  .model-card:hover { border-color: var(--accent); }
+  .model-card .model-name { font-size: 0.8rem; font-family: monospace; color: var(--text-dim); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-card .model-verdict { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+  .model-card .model-conf { font-size: 0.78rem; color: var(--text-dim); }
+  .model-card .model-bar { height: 4px; border-radius: 2px; margin-top: 10px; display: flex; gap: 1px; overflow: hidden; }
+  .model-card .model-bar span { height: 100%; }
+  .model-unavailable { opacity: 0.4; }
+  .model-sub-suspected { border: 2px solid #ff4444 !important; box-shadow: 0 0 12px rgba(255,68,68,0.3); }
+
+  /* Evidence Sections */
+  .evidence-section { margin-bottom: 20px; }
+  .evidence-category {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 12px; overflow: hidden;
+  }
+  .evidence-cat-header {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer; user-select: none;
+    transition: background 0.15s;
+  }
+  .evidence-cat-header:hover { background: var(--surface2); }
+  .evidence-cat-header .cat-icon { font-size: 1.1rem; }
+  .evidence-cat-header .cat-count {
+    margin-left: auto; background: var(--surface2); padding: 2px 8px;
+    border-radius: 10px; font-size: 0.72rem; color: var(--text-dim);
+  }
+  .evidence-cat-header .arrow { transition: transform 0.2s; color: var(--text-dim); }
+  .evidence-cat-body { display: none; padding: 0 18px 14px; }
+  .evidence-cat-body.open { display: block; }
+  .evidence-item {
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+    color: var(--text-dim); line-height: 1.5;
+  }
+  .evidence-item:last-child { border-bottom: none; }
+  .evidence-item code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 0.78rem; color: var(--cyan); }
+
+  /* Score Table */
+  .score-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+  .score-table th {
+    text-align: left; padding: 10px 14px; font-size: 0.76rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-dim); border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .score-table th:first-child { border-radius: 8px 0 0 0; }
+  .score-table th:last-child { border-radius: 0 8px 0 0; }
+  .score-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.84rem; }
+  .score-table tr:last-child td { border-bottom: none; }
+  .score-table tr:hover td { background: var(--surface2); }
+  .score-bar-cell { width: 120px; }
+  .score-bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; display: flex; }
+  .score-bar-fill { height: 100%; transition: width 0.6s ease; }
+
+  /* Fingerprint reference table */
+  .fp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.78rem; }
+  .fp-table th { text-align: left; padding: 8px 12px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); border-bottom: 1px solid var(--border); background: var(--bg); }
+  .fp-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 0.76rem; }
+  .fp-table tr:hover td { background: var(--surface2); }
+
+  /* Report actions */
+  .report-actions { display: flex; gap: 8px; margin-bottom: 20px; }
+  .btn-sm {
+    padding: 8px 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text-dim); font-size: 0.82rem; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Probe timeline */
+  .probe-timeline { position: relative; padding-left: 24px; }
+  .probe-timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .probe-item { position: relative; padding: 8px 0 8px 16px; font-size: 0.82rem; }
+  .probe-item::before {
+    content: ''; position: absolute; left: -20px; top: 12px; width: 10px; height: 10px;
+    border-radius: 50%; border: 2px solid var(--border); background: var(--surface);
+  }
+  .probe-item.ok::before { border-color: var(--green); background: var(--green); }
+  .probe-item.fail::before { border-color: var(--red); background: var(--red); }
+  .probe-item.warn::before { border-color: var(--yellow); background: var(--yellow); }
+  .probe-item .probe-label { color: var(--text-dim); font-size: 0.76rem; }
+  .probe-item .probe-value { color: var(--text); }
+
+  /* Model selector */
+  .model-selector { margin-bottom: 16px; display: none; }
+  .model-selector.active { display: block; }
+  .model-selector-label { font-size: 0.82rem; font-weight: 500; color: var(--text-dim); margin-bottom: 8px; }
+  .model-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .model-chip {
+    display: flex; align-items: center; gap: 5px; padding: 5px 12px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 0.78rem; font-family: 'SF Mono','Fira Code',monospace;
+    color: var(--text-dim); cursor: pointer; user-select: none; transition: all 0.15s;
+  }
+  .model-chip input[type="checkbox"] { accent-color: var(--accent); width: 13px; height: 13px; }
+  .model-chip:hover { border-color: var(--accent); color: var(--text); }
+  .model-chip.checked { border-color: var(--accent); background: rgba(88,166,255,0.08); color: var(--text); }
+  .model-chip-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+  .model-chip-actions button {
+    padding: 3px 10px; background: none; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-dim); font-size: 0.72rem;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .model-chip-actions button:hover { border-color: var(--accent); color: var(--accent); }
+  .custom-model-row { display: flex; gap: 8px; align-items: center; }
+  .custom-model-row input {
+    flex: 1; padding: 7px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.82rem;
+    font-family: 'SF Mono','Fira Code',monospace; outline: none;
+  }
+  .custom-model-row input:focus { border-color: var(--accent); }
+  .custom-model-row input::placeholder { color: #384050; }
+  .custom-model-row button {
+    padding: 7px 14px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-dim); font-size: 0.82rem;
+    cursor: pointer; white-space: nowrap; transition: all 0.15s;
+  }
+  .custom-model-row button:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Scan mode toggle */
+  .scan-mode-toggle { display: flex; gap: 0; margin-bottom: 14px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .scan-mode-btn {
+    flex: 1; padding: 9px 0; text-align: center; font-size: 0.84rem; font-weight: 500;
+    background: var(--bg); color: var(--text-dim); cursor: pointer;
+    border: none; transition: all 0.15s; user-select: none;
+  }
+  .scan-mode-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .scan-mode-btn.active { background: rgba(88,166,255,0.12); color: var(--accent); font-weight: 600; }
+  .scan-mode-btn:hover:not(.active) { background: var(--surface2); color: var(--text); }
+
+  .single-model-input { display: none; margin-bottom: 14px; }
+  .single-model-input.active { display: block; }
+  .single-model-input label { font-size: 0.82rem; color: var(--text-dim); margin-bottom: 4px; }
+  .single-model-input input {
+    width: 100%; padding: 9px 14px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 0.9rem;
+    font-family: 'SF Mono','Fira Code',monospace; outline: none;
+  }
+  .single-model-input input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,166,255,0.1); }
+
+  /* Safety Notice */
+  .safety-notice {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: linear-gradient(135deg, rgba(63,185,80,0.08), rgba(88,166,255,0.06));
+    border: 1px solid rgba(63,185,80,0.25); border-radius: var(--radius);
+    padding: 14px 18px; margin-bottom: 20px; font-size: 0.84rem; color: var(--text-dim); line-height: 1.6;
+  }
+  .safety-notice .safety-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+  .safety-notice .safety-text { flex: 1; }
+  .safety-notice strong { color: var(--green); }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .form-row { flex-direction: column; }
+    .charts-row { grid-template-columns: 1fr; }
+    .model-grid { grid-template-columns: 1fr 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .scan-mode-toggle { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>CC Proxy Detector v9.0</h1>
+    <p class="subtitle">Claude Code 中转来源检测 &mdash; 输入地址和 Key，一键检测出报告</p>
+  </div>
+
+  <!-- Safety Notice -->
+  <div class="safety-notice">
+    <span class="safety-icon">&#x1F6E1;&#xFE0F;</span>
+    <div class="safety-text">
+      <strong>安全模式</strong> &mdash; 所有探测均模拟正常 Claude Code 终端请求，低频串行发送，单次请求间隔 &ge;0.5s，避免触发风控或封号。检测过程产生少量 token 消耗，费用会在报告中详细列出。
+    </div>
+  </div>
+
+  <!-- Form -->
+  <div class="card">
+    <div class="form-row">
+      <div class="field">
+        <label for="base_url">目标地址 (Base URL)</label>
+        <input type="text" id="base_url" placeholder="https://your-proxy.example.com" />
+      </div>
+      <div class="field key-field">
+        <label for="api_key">API Key</label>
+        <input type="password" id="api_key" placeholder="sk-..." />
+      </div>
+    </div>
+
+    <!-- Scan Mode Toggle -->
+    <div class="scan-mode-toggle">
+      <button class="scan-mode-btn active" onclick="setScanMode('all')" id="mode_all">全模型扫描</button>
+      <button class="scan-mode-btn" onclick="setScanMode('select')" id="mode_select">选择模型</button>
+      <button class="scan-mode-btn" onclick="setScanMode('single')" id="mode_single">单模型检测</button>
+    </div>
+
+    <!-- Model Selector (for 'select' mode) -->
+    <div class="model-selector" id="model_selector">
+      <div class="model-selector-label">选择要扫描的模型</div>
+      <div class="model-chip-actions">
+        <button onclick="toggleAllModels(true)">全选</button>
+        <button onclick="toggleAllModels(false)">全不选</button>
+        <button onclick="toggleModelGroup('opus')">仅 Opus</button>
+        <button onclick="toggleModelGroup('sonnet')">仅 Sonnet</button>
+      </div>
+      <div class="model-chips" id="model_chips"></div>
+      <div class="custom-model-row">
+        <input type="text" id="custom_model_input" placeholder="自定义模型 ID，如 claude-3-5-sonnet-20241022" />
+        <button onclick="addCustomModel()">+ 添加</button>
+      </div>
+    </div>
+
+    <!-- Single Model Input -->
+    <div class="single-model-input" id="single_model_section">
+      <label>模型 ID (留空自动选择)</label>
+      <input type="text" id="single_model" placeholder="claude-sonnet-4-6 (留空自动选择最佳可用模型)" />
+    </div>
+
+    <div class="options-row">
+      <label class="option-chip"><input type="checkbox" id="opt_parallel" onchange="toggleParallelNotice()" /> 并行加速</label>
+      <label class="option-chip"><input type="checkbox" id="opt_streaming" checked /> SSE 流式</label>
+      <label class="option-chip"><input type="checkbox" id="opt_multiturn" checked /> 多轮配对</label>
+      <label class="option-chip"><input type="checkbox" id="opt_anti_bypass" checked /> 反绕过</label>
+    </div>
+    <div id="parallel_notice" style="display:none; font-size:0.78rem; color:var(--cyan); margin-bottom:12px; padding:6px 12px; background:rgba(57,210,192,0.08); border-radius:6px;">
+      &#x26A1; 并行模式：所有探测项同时并发执行，速度大幅提升，但短时间内会产生大量并发请求。如果目标代理有严格的并发限制或风控策略，可能导致部分探测失败 (502/429)。建议先用串行模式确认代理稳定性。
+    </div>
+    <div class="btn-row">
+      <button class="btn-detect" id="btn_detect" onclick="startDetect(false)">开始检测</button>
+      <button class="btn-detect" id="btn_lite" onclick="startDetect(true)" style="background:linear-gradient(135deg, #059669, #10b981)">低消耗检测</button>
+      <button class="btn-check" id="btn_check" onclick="checkModels()">检测可用性</button>
+    </div>
+    <div id="lite_notice" style="display:none; font-size:0.78rem; color:var(--yellow); margin-top:8px; padding:6px 12px; background:rgba(210,153,34,0.08); border-radius:6px;">
+      &#x26A1; 低消耗模式：跳过自动压缩检测 (~50K tokens)、Web Search 检测、模型替换检测 (偷鸡检测)，减少 token 消耗约 80%
+    </div>
+    <button class="btn-stop" id="btn_stop" onclick="stopDetect()">停止检测</button>
+  </div>
+
+  <!-- Model Availability Result -->
+  <div class="card availability-result" id="availability_result" style="display:none">
+    <div class="card-title">模型可用性</div>
+    <div id="availability_content"></div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-section" id="progress_section">
+    <div class="card">
+      <div class="card-title">检测进度</div>
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progress_bar"></div></div>
+      <div class="progress-text" id="progress_text">准备中...</div>
+      <div class="log-box" id="log_box"></div>
+    </div>
+  </div>
+
+  <!-- Report -->
+  <div class="report-section" id="report_section"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+let currentTaskId = null, currentReport = null, currentES = null;
+let scanMode = 'all'; // 'all' | 'select' | 'single'
+
+const DEFAULT_MODELS = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-opus-4-5-20251101',
+  'claude-opus-4-1-20250805',
+  'claude-opus-4-20250514',
+  'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-20250514',
+  'claude-haiku-4-5-20251001',
+];
+
+// Track selected models
+let selectedModels = new Set(DEFAULT_MODELS);
+let customModels = [];
+
+function initModelChips() {
+  const container = document.getElementById('model_chips');
+  container.innerHTML = '';
+  const allModels = [...DEFAULT_MODELS, ...customModels];
+  allModels.forEach(m => {
+    const checked = selectedModels.has(m);
+    const isCustom = customModels.includes(m);
+    const chip = document.createElement('label');
+    chip.className = 'model-chip' + (checked ? ' checked' : '');
+    chip.innerHTML = `<input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleModel('${m}', this)" />${esc(m)}${isCustom ? ' <span style="color:var(--accent);margin-left:2px;cursor:pointer" onclick="removeCustomModel(event,\''+m+'\')">x</span>' : ''}`;
+    container.appendChild(chip);
+  });
+}
+
+function setScanMode(mode) {
+  scanMode = mode;
+  document.querySelectorAll('.scan-mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode_' + mode).classList.add('active');
+  document.getElementById('model_selector').classList.toggle('active', mode === 'select');
+  document.getElementById('single_model_section').classList.toggle('active', mode === 'single');
+  if (mode === 'select') initModelChips();
+}
+
+function toggleModel(model, checkbox) {
+  if (checkbox.checked) selectedModels.add(model);
+  else selectedModels.delete(model);
+  checkbox.parentElement.classList.toggle('checked', checkbox.checked);
+}
+
+function toggleAllModels(select) {
+  const allModels = [...DEFAULT_MODELS, ...customModels];
+  if (select) allModels.forEach(m => selectedModels.add(m));
+  else selectedModels.clear();
+  initModelChips();
+}
+
+function toggleModelGroup(group) {
+  selectedModels.clear();
+  const allModels = [...DEFAULT_MODELS, ...customModels];
+  allModels.forEach(m => { if (m.includes(group)) selectedModels.add(m); });
+  initModelChips();
+}
+
+function addCustomModel() {
+  const input = document.getElementById('custom_model_input');
+  const model = input.value.trim();
+  if (!model) return;
+  if (!customModels.includes(model) && !DEFAULT_MODELS.includes(model)) {
+    customModels.push(model);
+    selectedModels.add(model);
+  }
+  input.value = '';
+  initModelChips();
+}
+
+function removeCustomModel(event, model) {
+  event.preventDefault();
+  event.stopPropagation();
+  customModels = customModels.filter(m => m !== model);
+  selectedModels.delete(model);
+  initModelChips();
+}
+
+// Enter key to add custom model
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('custom_model_input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addCustomModel(); }
+  });
+});
+
+const COLORS = {
+  anthropic: '#3fb950', bedrock_invoke: '#d29922',
+  bedrock_converse: '#db6d28', antigravity: '#f85149',
+  azure: '#0078d4', openrouter_reverse: '#a371f7',
+  custom_reverse: '#f778ba',
+  suspicious: '#f85149', unknown: '#8b949e', unavailable: '#30363d'
+};
+const VERDICT_NAMES = {
+  anthropic: 'Anthropic 官方 (原生)', bedrock_invoke: 'AWS 官转 (Bedrock)',
+  bedrock_converse: 'Kiro 逆向 (Bedrock)', antigravity: 'Google 逆向 (Vertex)',
+  azure: 'Azure 逆向', openrouter_reverse: 'OpenRouter 逆向',
+  custom_reverse: '自定义逆向渠道',
+  suspicious: '疑似伪装', unknown: '未知', unavailable: '不可用'
+};
+// 根据置信度返回判定名称：低置信度加"疑似"前缀
+function getVerdictName(verdict, confidence) {
+  const name = VERDICT_NAMES[verdict] || verdict;
+  if (verdict === 'unknown' || verdict === 'unavailable' || verdict === 'suspicious') return name;
+  if (confidence < 0.5) return '疑似 ' + name + ' (置信度不足)';
+  if (confidence < 0.7) return '大概率 ' + name;
+  return name;
+}
+const VERDICT_ICONS = {
+  anthropic: '&#x2705;', bedrock_invoke: '&#x1F7E1;',
+  bedrock_converse: '&#x1F7E0;', antigravity: '&#x1F534;',
+  azure: '&#x1F535;', openrouter_reverse: '&#x1F7E3;',
+  custom_reverse: '&#x1F7E4;',
+  suspicious: '&#x26A0;&#xFE0F;', unknown: '&#x2753;'
+};
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#253040';
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+function toggleParallelNotice() {
+  document.getElementById('parallel_notice').style.display =
+    document.getElementById('opt_parallel').checked ? 'block' : 'none';
+}
+
+function startDetect(lite) {
+  const baseUrl = document.getElementById('base_url').value.trim();
+  const apiKey = document.getElementById('api_key').value.trim();
+  if (!baseUrl) { alert('请填写目标地址'); return; }
+  if (!apiKey) { alert('请填写 API Key'); return; }
+
+  // Show lite notice
+  document.getElementById('lite_notice').style.display = lite ? 'block' : 'none';
+
+  // Build options based on scan mode
+  const options = {
+    base_url: baseUrl, api_key: apiKey,
+    parallel: document.getElementById('opt_parallel').checked,
+    streaming: document.getElementById('opt_streaming').checked,
+    multiturn: document.getElementById('opt_multiturn').checked,
+    anti_bypass: document.getElementById('opt_anti_bypass').checked,
+    rounds: 2,
+    lite: !!lite,
+  };
+
+  if (scanMode === 'all') {
+    options.scan_all = true;
+  } else if (scanMode === 'select') {
+    const models = [...selectedModels];
+    if (models.length === 0) { alert('请至少选择一个模型'); return; }
+    options.scan_all = true;
+    options.scan_models = models.join(',');
+  } else {
+    // single model
+    options.scan_all = false;
+    const singleModel = document.getElementById('single_model').value.trim();
+    if (singleModel) options.model = singleModel;
+  }
+
+  const btn = document.getElementById('btn_detect');
+  btn.disabled = true; btn.textContent = '检测中...';
+  document.getElementById('btn_lite').disabled = true;
+  document.getElementById('btn_check').disabled = true;
+  document.getElementById('btn_stop').classList.add('active');
+  document.getElementById('availability_result').style.display = 'none';
+  document.getElementById('progress_section').classList.add('active');
+  document.getElementById('report_section').classList.remove('active');
+  document.getElementById('report_section').innerHTML = '';
+  document.getElementById('log_box').innerHTML = '';
+  document.getElementById('progress_bar').style.width = '1%';
+  document.getElementById('progress_bar').classList.remove('done');
+  document.getElementById('progress_text').textContent = '启动检测中...';
+
+  fetch('/api/detect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(options) })
+  .then(r => {
+    if (r.status === 429) return r.json().then(d => { throw new Error(d.error); });
+    return r.json();
+  }).then(data => {
+    if (data.error) { addLog(data.error, true); resetButtons(); document.getElementById('progress_section').classList.remove('active'); return; }
+    currentTaskId = data.task_id; listenProgress(data.task_id);
+  }).catch(err => { addLog('请求失败: ' + err.message, true); resetButtons(); });
+}
+
+function stopDetect() {
+  if (!currentTaskId) return;
+  fetch('/api/stop/' + currentTaskId, { method: 'POST' })
+  .then(r => r.json()).then(data => {
+    if (data.error) addLog('停止失败: ' + data.error, true);
+    else addLog('正在停止检测...');
+  }).catch(err => addLog('停止请求失败: ' + err.message, true));
+}
+
+function resetButtons() {
+  const btn = document.getElementById('btn_detect');
+  btn.disabled = false; btn.textContent = '开始检测';
+  document.getElementById('btn_lite').disabled = false;
+  document.getElementById('btn_check').disabled = false;
+  document.getElementById('btn_stop').classList.remove('active');
+}
+
+function checkModels() {
+  const baseUrl = document.getElementById('base_url').value.trim();
+  const apiKey = document.getElementById('api_key').value.trim();
+  if (!baseUrl) { alert('请填写目标地址'); return; }
+  if (!apiKey) { alert('请填写 API Key'); return; }
+
+  // 根据扫描模式确定模型列表
+  let scanModels = null;
+  if (scanMode === 'select') {
+    const models = [...selectedModels];
+    if (models.length === 0) { alert('请至少选择一个模型'); return; }
+    scanModels = models.join(',');
+  } else if (scanMode === 'single') {
+    const sm = document.getElementById('single_model').value.trim();
+    if (sm) scanModels = sm;
+  }
+
+  const btn = document.getElementById('btn_check');
+  btn.disabled = true; btn.textContent = '检测中...';
+  document.getElementById('btn_detect').disabled = true;
+
+  const body = { base_url: baseUrl, api_key: apiKey };
+  if (scanModels) body.scan_models = scanModels;
+
+  fetch('/api/check-models', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
+  .then(r => {
+    if (r.status === 429) return r.json().then(d => { throw new Error(d.error); });
+    return r.json();
+  })
+  .then(data => {
+    if (data.error) { alert(data.error); resetButtons(); return; }
+    renderAvailability(data);
+    resetButtons();
+    btn.textContent = '检测可用性';
+  }).catch(err => {
+    alert(err.message);
+    resetButtons();
+    btn.textContent = '检测可用性';
+  });
+}
+
+function renderAvailability(data) {
+  const container = document.getElementById('availability_result');
+  const content = document.getElementById('availability_content');
+  container.style.display = 'block';
+
+  let html = `<div class="avail-summary"><strong>${data.available_count}</strong> / ${data.total} 可用</div>`;
+  html += '<div class="avail-grid">';
+  for (const m of data.available) {
+    html += `<div class="avail-item ok">&#x2705; ${esc(m)}</div>`;
+  }
+  for (const m of data.unavailable) {
+    html += `<div class="avail-item fail">&#x274C; ${esc(m)}</div>`;
+  }
+  html += '</div>';
+  content.innerHTML = html;
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function listenProgress(taskId) {
+  const es = new EventSource('/api/progress/' + taskId);
+  currentES = es;
+  es.onmessage = function(event) {
+    const d = JSON.parse(event.data);
+    if (d.type === 'log') {
+      document.getElementById('progress_bar').style.width = d.progress + '%';
+      document.getElementById('progress_text').textContent = d.progress + '% - ' + d.msg;
+      addLog(d.msg);
+    } else if (d.type === 'done') {
+      es.close(); currentES = null;
+      const bar = document.getElementById('progress_bar');
+      bar.style.width = '100%'; bar.classList.add('done');
+      document.getElementById('progress_text').textContent = '100% - 检测完成'; addLog('检测完成!');
+      fetchReport(taskId);
+    } else if (d.type === 'stopped') {
+      es.close(); currentES = null;
+      addLog('检测已停止', true);
+      document.getElementById('progress_text').textContent = '已停止';
+      resetButtons();
+    } else if (d.type === 'error') {
+      es.close(); currentES = null;
+      addLog('错误: ' + d.msg, true);
+      resetButtons();
+    }
+  };
+  es.onerror = function() { es.close(); currentES = null; setTimeout(() => fetchReport(taskId), 1000); };
+}
+
+function fetchReport(taskId) {
+  fetch('/api/report/' + taskId).then(r => r.json()).then(report => {
+    currentReport = report; renderReport(report);
+    resetButtons();
+  }).catch(err => {
+    addLog('获取报告失败: ' + err.message, true);
+    resetButtons();
+  });
+}
+
+function renderReport(report) {
+  const rs = document.getElementById('report_section');
+  rs.innerHTML = ''; rs.classList.add('active');
+
+  if (report.type === 'scan') renderScanReport(rs, report);
+  else renderSingleReport(rs, report);
+
+  rs.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderScanReport(container, report) {
+  const results = report.model_results || [];
+  const available = results.filter(r => r.verdict !== 'unavailable');
+  const unavailable = results.filter(r => r.verdict === 'unavailable');
+
+  // Dominant verdict + confidence
+  const verdictCounts = {};
+  const verdictConfSum = {};
+  available.forEach(r => {
+    verdictCounts[r.verdict] = (verdictCounts[r.verdict]||0)+1;
+    verdictConfSum[r.verdict] = (verdictConfSum[r.verdict]||0)+(r.confidence||0);
+  });
+  const dominant = Object.entries(verdictCounts).sort((a,b)=>b[1]-a[1])[0];
+  const dv = dominant ? dominant[0] : 'unknown';
+  const dvConf = dominant ? (verdictConfSum[dv] / verdictCounts[dv]) : 0;
+
+  const H = (html) => container.insertAdjacentHTML('beforeend', html);
+
+  // Verdict Banner
+  H(`<div class="verdict-banner verdict-${dv}-bg">
+      <div class="verdict-icon">${VERDICT_ICONS[dv]||'?'}</div>
+      <div class="verdict-label">${getVerdictName(dv, dvConf)}</div>
+      <div class="verdict-sub">${report.is_mixed ? '&#x26A0; 混合渠道 - 不同模型路由到不同后端' : '所有模型来源一致'} | ${available.length}/${results.length} 模型可用${report.proxy_platform ? ' | 平台: '+esc(report.proxy_platform) : ''}</div>
+    </div>`);
+
+  // Model Substitution Alerts (偷鸡检测 - 最醒目的位置)
+  available.forEach(r => {
+    const ms = r.model_substitution;
+    if (ms && ms.suspected) {
+      H(`<div class="model-sub-alert">
+        <div class="alert-title">&#x1F6A8; 模型替换警告 (偷鸡检测) — ${esc(r.model)}</div>
+        <div class="alert-detail">
+          声称模型: <strong>${esc(ms.claimed_model)}</strong> (${esc(ms.claimed_tier||'')}级)<br>
+          实际行为: <strong style="color:#ff4444">${esc(ms.actual_tier||'?')}级</strong> — 该代理可能用便宜模型冒充贵模型!
+        </div>
+        <div class="alert-meter"><div class="alert-meter-fill" style="width:${Math.round(ms.confidence*100)}%"></div></div>
+        <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:4px">替换置信度: ${Math.round(ms.confidence*100)}%</div>
+        <div class="alert-stats">
+          <div class="alert-stat"><div class="alert-stat-value">${ms.tokens_per_sec||'?'}</div><div class="alert-stat-label">tok/s 实测速度</div></div>
+          <div class="alert-stat"><div class="alert-stat-value">${Math.round((ms.reasoning_score||0)*100)}%</div><div class="alert-stat-label">推理得分</div></div>
+          <div class="alert-stat"><div class="alert-stat-value">${Math.round((ms.reasoning_expected||0)*100)}%</div><div class="alert-stat-label">预期推理</div></div>
+        </div>
+        ${(ms.evidence||[]).length > 0 ? '<div style="margin-top:12px;font-size:0.8rem;color:rgba(255,255,255,0.6)">' + (ms.evidence||[]).map(e => '• '+esc(e)).join('<br>') + '</div>' : ''}
+      </div>`);
+    }
+  });
+
+  // Stats
+  H(`<div class="stats-grid" id="scan_stats"></div>`);
+  const sg = container.querySelector('#scan_stats');
+  addStatCard(sg, results.length, '扫描模型', 'accent-blue');
+  addStatCard(sg, available.length, '可用模型', 'accent-green');
+  addStatCard(sg, unavailable.length, '不可用', 'accent-red');
+  addStatCard(sg, report.is_mixed ? 'YES' : 'NO', '混合渠道', report.is_mixed ? 'accent-red' : 'accent-green');
+  if (report.proxy_platform) addStatCard(sg, report.proxy_platform, '中转平台', 'accent-purple');
+  const avgLat = available.length > 0 ? Math.round(available.reduce((s,r) => s+r.avg_latency_ms,0)/available.length) : 0;
+  addStatCard(sg, avgLat + 'ms', '平均延迟', 'accent-cyan');
+  if (report.total_cost > 0) addStatCard(sg, '$' + report.total_cost.toFixed(4), '检测总费用', 'accent-yellow');
+
+  // Token Usage & Cost Table
+  if (available.some(r => r.total_input_tokens > 0)) {
+    H(`<div class="card"><div class="card-title">Token 消耗 &amp; 费用明细</div>
+      <table class="score-table"><thead><tr>
+        <th>模型</th><th>Input Tokens</th><th>Output Tokens</th>
+        <th>Cache 创建</th><th>Cache 读取</th><th>总 Tokens</th>
+        <th>费用 (USD)</th>
+      </tr></thead><tbody id="token_tbody"></tbody>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td>合计</td>
+        <td>${fmtNum(report.total_input_tokens||0)}</td>
+        <td>${fmtNum(report.total_output_tokens||0)}</td>
+        <td>${fmtNum(report.total_cache_creation_tokens||0)}</td>
+        <td>${fmtNum(report.total_cache_read_tokens||0)}</td>
+        <td>${fmtNum((report.total_input_tokens||0)+(report.total_output_tokens||0)+(report.total_cache_creation_tokens||0)+(report.total_cache_read_tokens||0))}</td>
+        <td style="color:var(--yellow)">$${(report.total_cost||0).toFixed(4)}</td>
+      </tr></tfoot></table></div>`);
+    const ttb = container.querySelector('#token_tbody');
+    available.forEach(r => {
+      const c = r.cost || {};
+      const totalTk = (r.total_input_tokens||0)+(r.total_output_tokens||0)+(r.total_cache_creation_tokens||0)+(r.total_cache_read_tokens||0);
+      const costStr = c.pricing_available ? '$'+c.total_cost.toFixed(4) : '<span style="color:var(--text-dim)">N/A</span>';
+      const costDetail = c.pricing_available
+        ? `<span style="font-size:0.7rem;color:var(--text-dim)">In:$${c.input_cost.toFixed(4)} Out:$${c.output_cost.toFixed(4)}${c.cache_write_cost?(' CW:$'+c.cache_write_cost.toFixed(4)):''} ${c.cache_read_cost?('CR:$'+c.cache_read_cost.toFixed(4)):''}</span>`
+        : '';
+      ttb.innerHTML += `<tr>
+        <td style="font-family:monospace">${shortModel(r.model)}</td>
+        <td>${fmtNum(r.total_input_tokens||0)}</td>
+        <td>${fmtNum(r.total_output_tokens||0)}</td>
+        <td>${fmtNum(r.total_cache_creation_tokens||0)}</td>
+        <td>${fmtNum(r.total_cache_read_tokens||0)}</td>
+        <td><strong>${fmtNum(totalTk)}</strong></td>
+        <td>${costStr}<br>${costDetail}</td>
+      </tr>`;
+    });
+    H(`<div style="font-size:0.72rem;color:var(--text-dim);padding:0 24px 12px">* 价格基于 Anthropic 官方 API 标准倍率计算，来源: <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" style="color:var(--accent)">platform.claude.com/pricing</a></div>`);
+  }
+
+  // Charts Row
+  H(`<div class="charts-row">
+    <div class="chart-card"><div class="card-title">来源分布</div><canvas id="chart_pie"></canvas></div>
+    <div class="chart-card"><div class="card-title">评分雷达图</div><canvas id="chart_radar"></canvas></div>
+  </div>`);
+
+  // Pie chart
+  const pieLabels = [], pieData = [], pieColors = [];
+  for (const [v, c] of Object.entries(verdictCounts)) {
+    pieLabels.push(VERDICT_NAMES[v]||v); pieData.push(c); pieColors.push(COLORS[v]||'#666');
+  }
+  if (unavailable.length > 0) { pieLabels.push('不可用'); pieData.push(unavailable.length); pieColors.push('#30363d'); }
+  new Chart(document.getElementById('chart_pie'), {
+    type: 'doughnut', data: { labels: pieLabels, datasets: [{ data: pieData, backgroundColor: pieColors, borderWidth: 0, hoverOffset: 6 }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { padding: 14, usePointStyle: true, pointStyle: 'circle' } } }, cutout: '62%' }
+  });
+
+  // Radar chart (aggregate scores)
+  const ALL_SCORE_KEYS = ['anthropic', 'bedrock_invoke', 'bedrock_converse', 'antigravity', 'azure', 'openrouter_reverse', 'custom_reverse'];
+  const ALL_SCORE_LABELS = ['Anthropic 官方', 'AWS 官转', 'Kiro 逆向', 'Google 逆向', 'Azure 逆向', 'OpenRouter 逆向', '自定义逆向'];
+  const aggScores = {};
+  ALL_SCORE_KEYS.forEach(k => aggScores[k] = 0);
+  available.forEach(r => { for (const k of ALL_SCORE_KEYS) aggScores[k] += (r.scores||{})[k]||0; });
+  // Filter to only show non-zero scores on radar
+  const radarLabels = [], radarData = [];
+  ALL_SCORE_KEYS.forEach((k, i) => { if (aggScores[k] > 0) { radarLabels.push(ALL_SCORE_LABELS[i]); radarData.push(aggScores[k]); } });
+  if (radarLabels.length < 3) { ALL_SCORE_KEYS.forEach((k, i) => { if (aggScores[k] === 0 && radarLabels.length < 3) { radarLabels.push(ALL_SCORE_LABELS[i]); radarData.push(0); } }); }
+  new Chart(document.getElementById('chart_radar'), {
+    type: 'radar',
+    data: { labels: radarLabels,
+      datasets: [{ label: '总分', data: radarData,
+        backgroundColor: 'rgba(88,166,255,0.15)', borderColor: 'rgba(88,166,255,0.8)', pointBackgroundColor: '#58a6ff', pointRadius: 4, borderWidth: 2 }] },
+    options: { responsive: true, scales: { r: { beginAtZero: true, grid: { color: '#253040' }, angleLines: { color: '#253040' }, ticks: { display: false } } },
+      plugins: { legend: { display: false } } }
+  });
+
+  // Latency bar chart + Score stacked bar
+  H(`<div class="charts-row">
+    <div class="chart-card"><div class="card-title">延迟对比 (ms)</div><canvas id="chart_latency"></canvas></div>
+    <div class="chart-card"><div class="card-title">评分分布</div><canvas id="chart_scores"></canvas></div>
+  </div>`);
+
+  const latLabels = available.map(r => shortModel(r.model));
+  const latData = available.map(r => r.avg_latency_ms);
+  const latColors = available.map(r => COLORS[r.verdict]||'#666');
+  new Chart(document.getElementById('chart_latency'), {
+    type: 'bar', data: { labels: latLabels, datasets: [{ data: latData, backgroundColor: latColors, borderRadius: 4, barThickness: 28 }] },
+    options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } },
+      scales: { x: { grid: { color: '#1a2230' } }, y: { grid: { display: false } } } }
+  });
+
+  // Stacked score bar
+  const scoreLabels = available.map(r => shortModel(r.model));
+  const mkDs = (key, label, color) => ({ label, data: available.map(r => (r.scores||{})[key]||0), backgroundColor: color, borderRadius: 2 });
+  new Chart(document.getElementById('chart_scores'), {
+    type: 'bar',
+    data: { labels: scoreLabels, datasets: [
+      mkDs('anthropic', 'Anthropic 官方', COLORS.anthropic),
+      mkDs('bedrock_invoke', 'AWS 官转', COLORS.bedrock_invoke),
+      mkDs('bedrock_converse', 'Kiro 逆向', COLORS.bedrock_converse),
+      mkDs('antigravity', 'Google 逆向', COLORS.antigravity),
+      mkDs('azure', 'Azure 逆向', COLORS.azure),
+      mkDs('openrouter_reverse', 'OpenRouter 逆向', COLORS.openrouter_reverse),
+      mkDs('custom_reverse', '自定义逆向', COLORS.custom_reverse),
+    ]},
+    options: { responsive: true, indexAxis: 'y', scales: { x: { stacked: true, grid: { color: '#1a2230' } }, y: { stacked: true, grid: { display: false } } },
+      plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, pointStyle: 'circle', boxWidth: 8 } } } }
+  });
+
+  // Model Cards
+  H(`<div class="card"><div class="card-title">模型检测详情</div><div class="model-grid" id="model_grid"></div></div>`);
+  const mg = container.querySelector('#model_grid');
+  results.forEach(r => {
+    const s = r.scores || {};
+    const total = ALL_SCORE_KEYS.reduce((a, k) => a + (s[k]||0), 0);
+    const pct = k => total > 0 ? ((s[k]||0)/total*100).toFixed(0) : 0;
+    if (r.verdict === 'unavailable') {
+      mg.innerHTML += `<div class="model-card model-unavailable"><div class="model-name">${esc(r.model)}</div><div class="model-verdict" style="color:var(--text-dim)">不可用</div></div>`;
+    } else {
+      const msub = r.model_substitution;
+      const subTag = msub && msub.suspected
+        ? `<div style="color:#ff4444;font-size:0.75rem;font-weight:700;margin-top:4px">&#x1F6A8; 疑似偷鸡: 实际${esc(msub.actual_tier||'?')}级 (${msub.tokens_per_sec||'?'} tok/s)</div>`
+        : (msub && msub.tokens_per_sec > 0 ? `<div style="color:var(--green);font-size:0.72rem;margin-top:4px">&#x2705; ${msub.tokens_per_sec} tok/s</div>` : '');
+      mg.innerHTML += `<div class="model-card${msub && msub.suspected ? ' model-sub-suspected' : ''}"><div class="model-name">${esc(r.model)}</div>
+        <div class="model-verdict" style="color:${COLORS[r.verdict]}">${getVerdictName(r.verdict, r.confidence||0)}</div>
+        <div class="model-conf">置信度 ${Math.round((r.confidence||0)*100)}% | ${r.avg_latency_ms}ms</div>
+        ${subTag}
+        <div class="model-bar">
+          ${ALL_SCORE_KEYS.map(k => `<span style="width:${pct(k)}%;background:${COLORS[k]}"></span>`).join('')}
+        </div></div>`;
+    }
+  });
+
+  // Score Table
+  H(`<div class="card"><div class="card-title">评分明细</div>
+    <table class="score-table"><thead><tr><th>模型</th><th>判定</th><th>置信度</th><th>Anthropic</th><th>AWS官转</th><th>Kiro</th><th>Google</th><th>Azure</th><th>OpenRouter</th><th>自定义</th><th>偷鸡</th><th>延迟</th></tr></thead>
+    <tbody id="score_tbody"></tbody></table></div>`);
+  const tb = container.querySelector('#score_tbody');
+  available.forEach(r => {
+    const s = r.scores || {};
+    const msub = r.model_substitution;
+    const subCell = msub && msub.suspected
+      ? `<td style="color:#ff4444;font-weight:700">&#x1F6A8; ${esc(msub.actual_tier||'?')}</td>`
+      : (msub && msub.tokens_per_sec > 0 ? `<td style="color:var(--green)">&#x2705;</td>` : '<td>-</td>');
+    tb.innerHTML += `<tr>
+      <td style="font-family:monospace">${shortModel(r.model)}</td>
+      <td style="color:${COLORS[r.verdict]}">${getVerdictName(r.verdict, r.confidence||0)}</td>
+      <td>${Math.round((r.confidence||0)*100)}%</td>
+      <td><strong style="color:${COLORS.anthropic}">${s.anthropic||0}</strong></td>
+      <td><strong style="color:${COLORS.bedrock_invoke}">${s.bedrock_invoke||0}</strong></td>
+      <td><strong style="color:${COLORS.bedrock_converse}">${s.bedrock_converse||0}</strong></td>
+      <td><strong style="color:${COLORS.antigravity}">${s.antigravity||0}</strong></td>
+      <td><strong style="color:${COLORS.azure}">${s.azure||0}</strong></td>
+      <td><strong style="color:${COLORS.openrouter_reverse}">${s.openrouter_reverse||0}</strong></td>
+      <td><strong style="color:${COLORS.custom_reverse}">${s.custom_reverse||0}</strong></td>
+      ${subCell}
+      <td>${r.avg_latency_ms}ms</td></tr>`;
+  });
+
+  // Evidence per model
+  available.forEach(r => {
+    const categories = categorizeEvidence(r.evidence || []);
+    let catHtml = '';
+    for (const [cat, items] of Object.entries(categories)) {
+      const icon = CAT_ICONS[cat] || '&#x1F4CB;';
+      catHtml += `<div class="evidence-category">
+        <div class="evidence-cat-header" onclick="toggleCat(this)">
+          <span class="cat-icon">${icon}</span> ${cat} <span class="cat-count">${items.length}</span>
+          <span class="arrow">&#x25B6;</span>
+        </div>
+        <div class="evidence-cat-body">${items.map(e => `<div class="evidence-item">${esc(e)}</div>`).join('')}</div>
+      </div>`;
+    }
+    H(`<div class="card"><div class="card-title">证据链 - ${shortModel(r.model)}</div>${catHtml}</div>`);
+  });
+
+  // Actions
+  addActions(container);
+}
+
+function renderSingleReport(container, report) {
+  const v = report.verdict || 'unknown';
+  const s = report.scores || {};
+  const total = (s.anthropic||0)+(s.bedrock_invoke||0)+(s.bedrock_converse||0)+(s.antigravity||0);
+
+  const H = (html) => container.insertAdjacentHTML('beforeend', html);
+
+  H(`<div class="verdict-banner verdict-${v}-bg">
+      <div class="verdict-icon">${VERDICT_ICONS[v]||'?'}</div>
+      <div class="verdict-label">${getVerdictName(v, report.confidence||0)}</div>
+      <div class="verdict-sub">置信度 ${Math.round((report.confidence||0)*100)}% | 模型: ${esc(report.model||'?')} | 延迟: ${report.avg_latency_ms||0}ms${report.proxy_platform ? ' | 平台: '+esc(report.proxy_platform) : ''}${(report.confidence||0) < 0.5 ? ' | &#x26A0; 置信度较低，结果仅供参考' : ''}</div>
+    </div>`);
+
+  // Model Substitution Alert (偷鸡检测)
+  const ms = report.model_substitution;
+  if (ms && ms.suspected) {
+    H(`<div class="model-sub-alert">
+      <div class="alert-title">&#x1F6A8; 模型替换警告 (偷鸡检测)</div>
+      <div class="alert-detail">
+        声称模型: <strong>${esc(ms.claimed_model||report.model||'?')}</strong> (${esc(ms.claimed_tier||'')}级)<br>
+        实际行为: <strong style="color:#ff4444">${esc(ms.actual_tier||'?')}级</strong> — 该代理可能用便宜模型冒充贵模型!
+      </div>
+      <div class="alert-meter"><div class="alert-meter-fill" style="width:${Math.round(ms.confidence*100)}%"></div></div>
+      <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:4px">替换置信度: ${Math.round(ms.confidence*100)}%</div>
+      <div class="alert-stats">
+        <div class="alert-stat"><div class="alert-stat-value">${ms.tokens_per_sec||'?'}</div><div class="alert-stat-label">tok/s 实测速度</div></div>
+        <div class="alert-stat"><div class="alert-stat-value">${Math.round((ms.reasoning_score||0)*100)}%</div><div class="alert-stat-label">推理得分</div></div>
+        <div class="alert-stat"><div class="alert-stat-value">${Math.round((ms.reasoning_expected||0)*100)}%</div><div class="alert-stat-label">预期推理</div></div>
+      </div>
+      ${(ms.evidence||[]).length > 0 ? '<div style="margin-top:12px;font-size:0.8rem;color:rgba(255,255,255,0.6)">' + (ms.evidence||[]).map(e => '• '+esc(e)).join('<br>') + '</div>' : ''}
+    </div>`);
+  } else if (ms && ms.tokens_per_sec > 0) {
+    H(`<div class="card" style="border-left: 3px solid var(--green);">
+      <div class="card-title">&#x2705; 模型验证通过</div>
+      <div style="font-size:0.88rem;color:var(--text-dim)">
+        速度 ${ms.tokens_per_sec} tok/s | 推理得分 ${Math.round((ms.reasoning_score||0)*100)}% — 与声称的模型等级一致
+      </div>
+    </div>`);
+  }
+
+  // Stats
+  H(`<div class="stats-grid" id="single_stats"></div>`);
+  const sg = container.querySelector('#single_stats');
+  addStatCard(sg, Math.round((report.confidence||0)*100)+'%', '置信度', 'accent-blue');
+  addStatCard(sg, (report.avg_latency_ms||0)+'ms', '平均延迟', 'accent-cyan');
+  addStatCard(sg, s.anthropic||0, 'Anthropic 官方', 'accent-green');
+  addStatCard(sg, s.bedrock_invoke||0, 'AWS 官转', 'accent-yellow');
+  addStatCard(sg, s.bedrock_converse||0, 'Kiro 逆向', 'accent-purple');
+  addStatCard(sg, s.antigravity||0, 'Google 逆向', 'accent-red');
+  if (s.azure) addStatCard(sg, s.azure, 'Azure 逆向', 'accent-blue');
+  if (s.openrouter_reverse) addStatCard(sg, s.openrouter_reverse, 'OpenRouter 逆向', 'accent-cyan');
+  if (s.custom_reverse) addStatCard(sg, s.custom_reverse, '自定义逆向', 'accent-pink');
+
+  // Token & Cost Stats
+  const c = report.cost || {};
+  if (c.total_cost > 0) addStatCard(sg, '$' + c.total_cost.toFixed(4), '检测费用', 'accent-yellow');
+  const totalTk = (report.total_input_tokens||0)+(report.total_output_tokens||0);
+  if (totalTk > 0) addStatCard(sg, fmtNum(totalTk), '总 Tokens', 'accent-blue');
+
+  // Token Usage Detail
+  if (report.total_input_tokens > 0) {
+    H(`<div class="card"><div class="card-title">Token 消耗 &amp; 费用</div>
+      <table class="score-table"><thead><tr>
+        <th>类型</th><th>Tokens</th><th>单价 ($/1M)</th><th>费用 (USD)</th>
+      </tr></thead><tbody>
+        <tr><td>Input Tokens (输入)</td><td>${fmtNum(report.total_input_tokens||0)}</td>
+          <td>${c.pricing_available ? getPricingInfo(report.model,'input') : '-'}</td>
+          <td>${c.pricing_available ? '$'+c.input_cost.toFixed(4) : 'N/A'}</td></tr>
+        <tr><td>Output Tokens (输出)</td><td>${fmtNum(report.total_output_tokens||0)}</td>
+          <td>${c.pricing_available ? getPricingInfo(report.model,'output') : '-'}</td>
+          <td>${c.pricing_available ? '$'+c.output_cost.toFixed(4) : 'N/A'}</td></tr>
+        <tr><td>Cache Creation (缓存创建)</td><td>${fmtNum(report.total_cache_creation_tokens||0)}</td>
+          <td>${c.pricing_available ? getPricingInfo(report.model,'cache_write') : '-'}</td>
+          <td>${c.pricing_available ? '$'+c.cache_write_cost.toFixed(4) : 'N/A'}</td></tr>
+        <tr><td>Cache Read (缓存读取)</td><td>${fmtNum(report.total_cache_read_tokens||0)}</td>
+          <td>${c.pricing_available ? getPricingInfo(report.model,'cache_read') : '-'}</td>
+          <td>${c.pricing_available ? '$'+c.cache_read_cost.toFixed(4) : 'N/A'}</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--border)">
+          <td>合计</td>
+          <td>${fmtNum((report.total_input_tokens||0)+(report.total_output_tokens||0)+(report.total_cache_creation_tokens||0)+(report.total_cache_read_tokens||0))}</td>
+          <td></td>
+          <td style="color:var(--yellow)">${c.pricing_available ? '$'+c.total_cost.toFixed(4) : 'N/A'}</td></tr>
+      </tbody></table>
+      <div style="font-size:0.72rem;color:var(--text-dim);margin-top:8px">* 价格基于 Anthropic 官方 API 标准倍率计算 (不含 Batch 折扣 / 长上下文加价)</div>
+    </div>`);
+  }
+
+  // Charts
+  H(`<div class="charts-row">
+    <div class="chart-card"><div class="card-title">评分雷达图</div><canvas id="chart_radar_s"></canvas></div>
+    <div class="chart-card"><div class="card-title">评分占比</div><canvas id="chart_pie_s"></canvas></div>
+  </div>`);
+
+  // Build dynamic labels/data for single report charts (only non-zero)
+  const sAllKeys = ['anthropic', 'bedrock_invoke', 'bedrock_converse', 'antigravity', 'azure', 'openrouter_reverse', 'custom_reverse'];
+  const sAllLabels = ['Anthropic 官方', 'AWS 官转', 'Kiro 逆向', 'Google 逆向', 'Azure 逆向', 'OpenRouter 逆向', '自定义逆向'];
+  const sRadarLabels = [], sRadarData = [];
+  sAllKeys.forEach((k, i) => { if ((s[k]||0) > 0) { sRadarLabels.push(sAllLabels[i]); sRadarData.push(s[k]); } });
+  if (sRadarLabels.length < 3) { sAllKeys.forEach((k, i) => { if ((s[k]||0) === 0 && sRadarLabels.length < 3) { sRadarLabels.push(sAllLabels[i]); sRadarData.push(0); } }); }
+
+  new Chart(document.getElementById('chart_radar_s'), {
+    type: 'radar',
+    data: { labels: sRadarLabels,
+      datasets: [{ label: '评分', data: sRadarData,
+        backgroundColor: 'rgba(88,166,255,0.15)', borderColor: 'rgba(88,166,255,0.8)', pointBackgroundColor: '#58a6ff', pointRadius: 5, borderWidth: 2 }] },
+    options: { responsive: true, scales: { r: { beginAtZero: true, grid: { color: '#253040' }, angleLines: { color: '#253040' }, ticks: { display: false } } },
+      plugins: { legend: { display: false } } }
+  });
+
+  const pLabels = [], pData = [], pColors = [];
+  sAllKeys.forEach((k, i) => { if ((s[k]||0) > 0) { pLabels.push(sAllLabels[i]); pData.push(s[k]); pColors.push(COLORS[k]); } });
+  new Chart(document.getElementById('chart_pie_s'), {
+    type: 'doughnut', data: { labels: pLabels, datasets: [{ data: pData, backgroundColor: pColors, borderWidth: 0, hoverOffset: 6 }] },
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { padding: 14, usePointStyle: true, pointStyle: 'circle' } } }, cutout: '62%' }
+  });
+
+  // Evidence
+  const categories = categorizeEvidence(report.evidence || []);
+  let catHtml = '';
+  for (const [cat, items] of Object.entries(categories)) {
+    const icon = CAT_ICONS[cat] || '&#x1F4CB;';
+    catHtml += `<div class="evidence-category">
+      <div class="evidence-cat-header" onclick="toggleCat(this)">
+        <span class="cat-icon">${icon}</span> ${cat} <span class="cat-count">${items.length}</span>
+        <span class="arrow">&#x25B6;</span>
+      </div>
+      <div class="evidence-cat-body">${items.map(e => `<div class="evidence-item">${esc(e)}</div>`).join('')}</div>
+    </div>`;
+  }
+  H(`<div class="card"><div class="card-title">证据链</div>${catHtml}</div>`);
+
+  // Probe Timeline
+  const fps = report.fingerprints || [];
+  let timelineHtml = '';
+  fps.forEach((fp, i) => {
+    const status = fp.error ? 'fail' : 'ok';
+    const label = fp.probe_type || '?';
+    const detail = fp.error ? fp.error.substring(0,60) :
+      `${fp.latency_ms||0}ms | tool=${fp.tool_id_source||'-'} | msg=${fp.msg_id_source||'-'}`;
+    timelineHtml += `<div class="probe-item ${status}"><span class="probe-label">#${i+1} ${esc(label)}</span><br><span class="probe-value">${esc(detail)}</span></div>`;
+  });
+  H(`<div class="card"><div class="card-title">探测时间线</div><div class="probe-timeline">${timelineHtml}</div></div>`);
+
+  addActions(container);
+}
+
+const CAT_ICONS = {
+  '指纹匹配': '&#x1F9EC;', '服务字段': '&#x1F3F7;&#xFE0F;', 'Headers': '&#x1F4E1;',
+  '反绕过': '&#x1F6E1;&#xFE0F;', '一致性': '&#x1F517;', '缓存检测': '&#x1F4BE;',
+  'Web搜索': '&#x1F310;', '压缩检测': '&#x1F4E6;', '延迟分析': '&#x23F1;&#xFE0F;',
+  '错误分析': '&#x274C;', '流式检测': '&#x1F4E1;', '多轮配对': '&#x1F504;',
+  '行为分析': '&#x1F3AD;', '其他': '&#x1F4CB;'
+};
+
+function categorizeEvidence(evidence) {
+  const cats = {};
+  const push = (cat, e) => { if (!cats[cat]) cats[cat] = []; cats[cat].push(e); };
+  evidence.forEach(e => {
+    if (/^\[R\d+\].*tool_use id|^\[R\d+\].*message id|^\[R\d+\].*model:|^\[R\d+\].*thinking sig/.test(e)) push('指纹匹配', e);
+    else if (/service_tier|inference_geo|cache_creation|usage:/.test(e)) push('服务字段', e);
+    else if (/headers|request-id|org.*id|ratelimit|rate-limit/i.test(e)) push('Headers', e);
+    else if (/金丝雀|系统提示|错误结构|边界/.test(e)) push('反绕过', e);
+    else if (/一致性/.test(e)) push('一致性', e);
+    else if (/缓存/.test(e)) push('缓存检测', e);
+    else if (/Web搜索|web.search/i.test(e)) push('Web搜索', e);
+    else if (/压缩/.test(e)) push('压缩检测', e);
+    else if (/延迟/.test(e)) push('延迟分析', e);
+    else if (/错误|pairing|配对/.test(e)) push('错误分析', e);
+    else if (/SSE|流式/.test(e)) push('流式检测', e);
+    else if (/多轮/.test(e)) push('多轮配对', e);
+    else if (/行为/.test(e)) push('行为分析', e);
+    else if (/修正|参考/.test(e)) push('一致性', e);
+    else push('其他', e);
+  });
+  return cats;
+}
+
+function toggleCat(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.arrow');
+  body.classList.toggle('open');
+  arrow.style.transform = body.classList.contains('open') ? 'rotate(90deg)' : '';
+}
+
+function addStatCard(container, value, label, accentClass) {
+  const d = document.createElement('div');
+  d.className = 'stat-card ' + (accentClass||'');
+  d.innerHTML = `<div class="stat-value">${esc(String(value))}</div><div class="stat-label">${esc(label)}</div>`;
+  container.appendChild(d);
+}
+
+function addActions(container) {
+  container.insertAdjacentHTML('beforeend', `<div class="report-actions">
+    <button class="btn-sm" onclick="downloadMd()">&#x1F4C4; 下载 Markdown</button>
+    <button class="btn-sm" onclick="downloadJson()">&#x1F4BE; 下载 JSON</button>
+    <button class="btn-sm" onclick="copyReport(this)">&#x1F4CB; 复制报告</button>
+  </div>`);
+}
+
+function shortModel(m) {
+  if (!m) return '?';
+  return m.replace('claude-', '').replace('-20250', '-').replace(/-latest$/, '');
+}
+
+function addLog(msg, isError) {
+  const box = document.getElementById('log_box');
+  const line = document.createElement('div');
+  line.className = 'log-line' + (isError ? ' error' : '');
+  line.textContent = msg; box.appendChild(line); box.scrollTop = box.scrollHeight;
+}
+
+function downloadMd() {
+  if (!currentReport) return;
+  const md = currentReport.markdown || generateFallbackMd();
+  if (!md) return;
+  download('report.md', md, 'text/markdown');
+}
+function downloadJson() { if (!currentReport) return; const d = {...currentReport}; delete d.markdown; download('report.json', JSON.stringify(d,null,2), 'application/json'); }
+function copyReport(btn) {
+  if (!currentReport) return;
+  const md = currentReport.markdown || generateFallbackMd();
+  if (!md) return;
+  navigator.clipboard.writeText(md).then(() => {
+    const o = btn.textContent;
+    btn.textContent = '已复制!';
+    setTimeout(() => btn.textContent = o, 1500);
+  }).catch(() => {
+    // fallback: textarea 复制
+    const ta = document.createElement('textarea');
+    ta.value = md;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const o = btn.textContent;
+    btn.textContent = '已复制!';
+    setTimeout(() => btn.textContent = o, 1500);
+  });
+}
+function generateFallbackMd() {
+  if (!currentReport) return '';
+  const r = currentReport;
+  let md = '# CC Proxy Detector Report\n\n';
+  if (r.type === 'scan') {
+    md += `**扫描模型数**: ${(r.model_results||[]).length}\n\n`;
+    (r.model_results||[]).forEach(m => {
+      if (m.verdict === 'unavailable') { md += `- ${m.model}: 不可用\n`; return; }
+      md += `- **${m.model}**: ${m.verdict} (置信度 ${Math.round((m.confidence||0)*100)}%, ${m.avg_latency_ms}ms)\n`;
+    });
+  } else {
+    md += `**模型**: ${r.model||'?'}\n`;
+    md += `**判定**: ${r.verdict||'unknown'}\n`;
+    md += `**置信度**: ${Math.round((r.confidence||0)*100)}%\n`;
+  }
+  return md;
+}
+function download(f, c, t) { const b = new Blob([c], {type:t+';charset=utf-8'}); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href=u; a.download=f; a.click(); URL.revokeObjectURL(u); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// 数字格式化 (千分位)
+function fmtNum(n) { return n ? n.toLocaleString() : '0'; }
+
+// 官方价格表 (USD per 1M tokens) — 与 detect.py 保持同步
+const MODEL_PRICING_JS = {
+  'claude-opus-4-6':          { input: 5, output: 25, cache_write: 6.25, cache_read: 0.50 },
+  'claude-sonnet-4-6':        { input: 3, output: 15, cache_write: 3.75, cache_read: 0.30 },
+  'claude-opus-4-5':          { input: 5, output: 25, cache_write: 6.25, cache_read: 0.50 },
+  'claude-opus-4-1':          { input: 15, output: 75, cache_write: 18.75, cache_read: 1.50 },
+  'claude-opus-4-20250514':   { input: 15, output: 75, cache_write: 18.75, cache_read: 1.50 },
+  'claude-sonnet-4-5':        { input: 3, output: 15, cache_write: 3.75, cache_read: 0.30 },
+  'claude-sonnet-4-20250514': { input: 3, output: 15, cache_write: 3.75, cache_read: 0.30 },
+  'claude-haiku-4-5':         { input: 1, output: 5, cache_write: 1.25, cache_read: 0.10 },
+  'claude-3-5-sonnet':        { input: 3, output: 15, cache_write: 3.75, cache_read: 0.30 },
+  'claude-3-5-haiku':         { input: 0.25, output: 1.25, cache_write: 0.3125, cache_read: 0.025 },
+};
+function getPricingInfo(modelId, field) {
+  if (!modelId) return '-';
+  let p = MODEL_PRICING_JS[modelId];
+  if (!p) {
+    for (const prefix of Object.keys(MODEL_PRICING_JS).sort((a,b)=>b.length-a.length)) {
+      if (modelId.startsWith(prefix)) { p = MODEL_PRICING_JS[prefix]; break; }
+    }
+  }
+  if (!p) return '-';
+  return '$' + p[field];
+}
+</script>
+</body>
+</html>
