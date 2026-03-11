@@ -107,11 +107,11 @@ python scripts/detect.py --scan-all --json --output report.json
 **支持系统**: Ubuntu/Debian, CentOS/RHEL/Fedora, macOS
 
 ```bash
-# 方法 A：全新服务器，一行命令从零部署（推荐）
-curl -fsSL https://raw.githubusercontent.com/feimaoT/cc-proxy-detector/main/deploy.sh -o deploy.sh && chmod +x deploy.sh && ./deploy.sh
-
-# 方法 B：已有代码，在项目目录内执行
+# 方法 A：全新服务器，一行命令拉取代码+部署（推荐）
 git clone https://github.com/feimaoT/cc-proxy-detector.git && cd cc-proxy-detector && chmod +x deploy.sh && ./deploy.sh
+
+# 方法 B：已有代码，拉取最新代码+部署
+cd cc-proxy-detector && git pull && chmod +x deploy.sh && ./deploy.sh
 ```
 
 脚本会自动完成：
