@@ -305,7 +305,10 @@ def progress_stream(task_id):
     def generate():
         last_log_idx = 0
         last_sent_progress = -1
+        heartbeat_interval = 15  # 每 15 秒发送一次心跳，防止连接超时
+        last_heartbeat = time.time()
         while True:
+            sent_something = False
             while last_log_idx < len(task.logs):
                 log = task.logs[last_log_idx]
                 data = json.dumps({
@@ -316,6 +319,7 @@ def progress_stream(task_id):
                 yield f"data: {data}\n\n"
                 last_sent_progress = task.progress
                 last_log_idx += 1
+                sent_something = True
 
             if task.status == "done":
                 data = json.dumps({"type": "done", "progress": 100}, ensure_ascii=False)
@@ -338,6 +342,13 @@ def progress_stream(task_id):
                 }, ensure_ascii=False)
                 yield f"data: {data}\n\n"
                 last_sent_progress = task.progress
+                sent_something = True
+
+            # SSE 心跳：防止反向代理/waitress 因空闲超时关闭连接
+            now = time.time()
+            if not sent_something and now - last_heartbeat >= heartbeat_interval:
+                yield ": heartbeat\n\n"
+                last_heartbeat = now
 
             time.sleep(0.5)
 

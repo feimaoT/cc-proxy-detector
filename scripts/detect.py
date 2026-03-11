@@ -4643,15 +4643,21 @@ def detect_full(base_url: str, api_key: str,
                 done_count = 0
                 for fut in concurrent.futures.as_completed(future_to_model):
                     m = future_to_model[fut]
-                    result = fut.result()
-                    results_map[m] = result
                     done_count += 1
                     pct = 15 + int(done_count / len(available_models) * 75)
-                    v = result.verdict
-                    vname = VERDICT_SHORT.get(v, v)
-                    emit(pct, 100,
-                         f"  {m}: {vname} "
-                         f"(置信度 {result.confidence:.0%}, {result.avg_latency_ms}ms)")
+                    try:
+                        result = fut.result()
+                        results_map[m] = result
+                        v = result.verdict
+                        vname = VERDICT_SHORT.get(v, v)
+                        emit(pct, 100,
+                             f"  {m}: {vname} "
+                             f"(置信度 {result.confidence:.0%}, {result.avg_latency_ms}ms)")
+                    except Exception as e:
+                        # 单模型检测失败不影响其他模型
+                        result = DetectResult(model=m, verdict="error", base_url=base_url)
+                        results_map[m] = result
+                        emit(pct, 100, f"  {m}: 检测异常 ({e})")
 
             for m in available_models:
                 result = results_map[m]

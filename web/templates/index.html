@@ -782,32 +782,50 @@ function renderAvailability(data) {
 }
 
 function listenProgress(taskId) {
-  const es = new EventSource(BASE_PATH + '/api/progress/' + taskId);
-  currentES = es;
-  es.onmessage = function(event) {
-    const d = JSON.parse(event.data);
-    if (d.type === 'log') {
-      document.getElementById('progress_bar').style.width = d.progress + '%';
-      document.getElementById('progress_text').textContent = d.progress + '% - ' + d.msg;
-      addLog(d.msg);
-    } else if (d.type === 'done') {
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  function connect() {
+    const es = new EventSource(BASE_PATH + '/api/progress/' + taskId);
+    currentES = es;
+    retryCount++;
+
+    es.onmessage = function(event) {
+      retryCount = 0;  // 收到消息重置重试计数
+      const d = JSON.parse(event.data);
+      if (d.type === 'log') {
+        document.getElementById('progress_bar').style.width = d.progress + '%';
+        document.getElementById('progress_text').textContent = d.progress + '% - ' + d.msg;
+        addLog(d.msg);
+      } else if (d.type === 'done') {
+        es.close(); currentES = null;
+        const bar = document.getElementById('progress_bar');
+        bar.style.width = '100%'; bar.classList.add('done');
+        document.getElementById('progress_text').textContent = '100% - 检测完成'; addLog('检测完成!');
+        fetchReport(taskId);
+      } else if (d.type === 'stopped') {
+        es.close(); currentES = null;
+        addLog('检测已停止', true);
+        document.getElementById('progress_text').textContent = '已停止';
+        resetButtons();
+      } else if (d.type === 'error') {
+        es.close(); currentES = null;
+        addLog('错误: ' + d.msg, true);
+        resetButtons();
+      }
+    };
+    es.onerror = function() {
       es.close(); currentES = null;
-      const bar = document.getElementById('progress_bar');
-      bar.style.width = '100%'; bar.classList.add('done');
-      document.getElementById('progress_text').textContent = '100% - 检测完成'; addLog('检测完成!');
-      fetchReport(taskId);
-    } else if (d.type === 'stopped') {
-      es.close(); currentES = null;
-      addLog('检测已停止', true);
-      document.getElementById('progress_text').textContent = '已停止';
-      resetButtons();
-    } else if (d.type === 'error') {
-      es.close(); currentES = null;
-      addLog('错误: ' + d.msg, true);
-      resetButtons();
-    }
-  };
-  es.onerror = function() { es.close(); currentES = null; setTimeout(() => fetchReport(taskId), 1000); };
+      if (retryCount < maxRetries) {
+        addLog('连接中断，正在重连...');
+        setTimeout(connect, 2000);
+      } else {
+        // 重试用尽，尝试获取报告（可能已完成）
+        setTimeout(() => fetchReport(taskId), 1000);
+      }
+    };
+  }
+  connect();
 }
 
 function fetchReport(taskId) {
